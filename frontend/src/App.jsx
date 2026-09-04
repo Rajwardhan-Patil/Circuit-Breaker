@@ -1,36 +1,60 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
+  Shield,
   ShieldAlert,
   ShieldCheck,
-  Zap,
   Power,
-  Activity,
+  Zap,
   CreditCard,
-  Clock,
+  Activity,
   Sliders,
   FileText,
-  AlertTriangle,
   CheckCircle2,
   XCircle,
   RefreshCw,
   Lock,
-  DollarSign,
-  Tag,
-  ArrowRight,
-  TrendingUp,
-  Cpu
+  Copy,
+  Check,
+  Plus,
+  Search,
+  HelpCircle,
+  Clock,
+  Wallet,
+  RotateCcw,
+  Sparkles,
+  Send,
+  Bot,
+  AlertTriangle
 } from 'lucide-react';
 
 const API_BASE = "http://127.0.0.1:8000";
 const WS_BASE = "ws://127.0.0.1:8000";
 
 function formatRupees(paise) {
-  if (paise == null) return "₹0";
+  if (paise == null) return "₹0.00";
   const rupees = paise / 100;
-  if (Number.isInteger(rupees)) {
-    return `₹${rupees.toLocaleString('en-IN')}`;
-  }
   return `₹${rupees.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+function parseUtcTimestamp(ts) {
+  if (!ts) return new Date();
+  if (typeof ts === 'string') {
+    const clean = ts.trim();
+    if (!clean.endsWith('Z') && !clean.includes('+') && !clean.includes('-')) {
+      return new Date(clean + 'Z');
+    }
+  }
+  return new Date(ts);
+}
+
+function formatTimeString(ts) {
+  const date = parseUtcTimestamp(ts);
+  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+}
+
+function formatDateTimeString(ts) {
+  const date = parseUtcTimestamp(ts);
+  return date.toLocaleString([], { dateStyle: 'short', timeStyle: 'medium' });
 }
 
 function App() {
@@ -52,6 +76,11 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [savingPolicy, setSavingPolicy] = useState(false);
   const [toast, setToast] = useState(null);
+  const [copiedOrderId, setCopiedOrderId] = useState(null);
+  const [auditSearch, setAuditSearch] = useState("");
+
+  // Tab State: "copilot" | "rules" | "transactions" | "audit"
+  const [activeTab, setActiveTab] = useState("copilot");
 
   // Policy Form State
   const [formLimit, setFormLimit] = useState(2000);
@@ -64,11 +93,70 @@ function App() {
   // Audit filter state
   const [auditFilter, setAuditFilter] = useState("ALL");
 
+  // Real-time Clock State
+  const [currentTime, setCurrentTime] = useState(new Date());
+
+  useEffect(() => {
+    const timer = setInterval(() => setCurrentTime(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  // AI Intent Console State
+  const [intentInput, setIntentInput] = useState("Buy groceries for ₹800");
+  const [intentLoading, setIntentLoading] = useState(false);
+  const [intentResult, setIntentResult] = useState(null);
+
   const wsRef = useRef(null);
+
+  const handleSendIntent = async (textToSubmit) => {
+    const queryText = textToSubmit || intentInput;
+    if (!queryText || !queryText.trim()) return;
+
+    setIntentLoading(true);
+    setIntentResult(null);
+
+    try {
+      const res = await fetch(`${API_BASE}/agents/${agentId}/intent`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: queryText })
+      });
+
+      const data = await res.json();
+      if (res.ok) {
+        setIntentResult(data);
+        showToast(
+          `AI Intent: ${data.decision.status} - ${data.decision.reason}`,
+          data.decision.status === "ALLOWED" ? "success" : "error"
+        );
+      } else {
+        setIntentResult({
+          intent: null,
+          decision: null,
+          error: data.detail || "Unable to process transaction intent"
+        });
+        showToast(data.detail || "Unable to parse AI intent", "error");
+      }
+    } catch (err) {
+      setIntentResult({
+        intent: null,
+        decision: null,
+        error: "Network error processing AI intent request"
+      });
+      showToast("Network error connecting to AI Intent endpoint", "error");
+    } finally {
+      setIntentLoading(false);
+    }
+  };
+
+  const handlePresetIntent = (text) => {
+    setIntentInput(text);
+    handleSendIntent(text);
+  };
 
   const showToast = (message, type = "success") => {
     setToast({ message, type });
-    setTimeout(() => setToast(null), 4000);
+    setTimeout(() => setToast(null), 3500);
   };
 
   // Fetch initial data
@@ -135,7 +223,6 @@ function App() {
           const data = JSON.parse(event.data);
           if (data.type === "TRANSACTION") {
             setTransactions((prev) => [data.transaction, ...prev]);
-            // Also refresh audit events
             fetch(`${API_BASE}/agents/${agentId}/audit`)
               .then((r) => r.json())
               .then((aData) => setAuditEvents(aData))
@@ -181,25 +268,51 @@ function App() {
     };
   }, [agentId]);
 
-  // Kill switch handler
+  // Kill switch toggle handler
   const handleKillToggle = async () => {
     const isKilled = policy.status === "KILLED";
     const endpoint = isKilled ? `${API_BASE}/agents/${agentId}/resume` : `${API_BASE}/agents/${agentId}/kill`;
-    
+
     try {
       const res = await fetch(endpoint, { method: "POST" });
       if (res.ok) {
         const data = await res.json();
         setPolicy((prev) => ({ ...prev, status: data.status }));
         showToast(
-          isKilled ? "Agent payment authority restored successfully" : "EMERGENCY: Kill Switch Activated! Agent disabled.",
+          isKilled ? "Agent payment authority restored" : "Emergency Kill Switch Activated! Agent spending revoked.",
           isKilled ? "success" : "error"
         );
+        fetch(`${API_BASE}/agents/${agentId}/policy`)
+          .then((r) => r.json())
+          .then((pData) => setPolicy(pData))
+          .catch(() => {});
       } else {
         showToast("Failed to toggle kill switch", "error");
       }
     } catch (err) {
       showToast("Network error toggling kill switch", "error");
+    }
+  };
+
+  // Reset Policy handler
+  const handleResetPolicy = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/agents/${agentId}/reset-policy`, { method: "POST" });
+      if (res.ok) {
+        const updatedPol = await res.json();
+        setPolicy(updatedPol);
+        setFormLimit(updatedPol.per_transaction_limit / 100);
+        setFormBudget(updatedPol.daily_budget / 100);
+        setFormAllowed(updatedPol.allowed_categories.join(", "));
+        setFormBlocked(updatedPol.blocked_categories.join(", "));
+        setFormStart(updatedPol.active_window_start || "09:00");
+        setFormEnd(updatedPol.active_window_end || "21:00");
+        showToast("Policy reset to default rules!");
+      } else {
+        showToast("Failed to reset policy", "error");
+      }
+    } catch (err) {
+      showToast("Network error resetting policy", "error");
     }
   };
 
@@ -241,6 +354,31 @@ function App() {
     }
   };
 
+  // Helper to add category to string input
+  const addCategoryPreset = (target, category) => {
+    if (target === "allowed") {
+      const current = formAllowed.split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
+      if (!current.includes(category.toLowerCase())) {
+        const next = [...current, category.toLowerCase()].join(", ");
+        setFormAllowed(next);
+      }
+    } else {
+      const current = formBlocked.split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
+      if (!current.includes(category.toLowerCase())) {
+        const next = [...current, category.toLowerCase()].join(", ");
+        setFormBlocked(next);
+      }
+    }
+  };
+
+  // Copy Order ID to clipboard
+  const copyToClipboard = (orderId) => {
+    navigator.clipboard.writeText(orderId);
+    setCopiedOrderId(orderId);
+    showToast(`Copied Order ID: ${orderId}`);
+    setTimeout(() => setCopiedOrderId(null), 2000);
+  };
+
   // Trigger test transaction directly from UI
   const handleTestTx = async (amountPaise, category, merchant) => {
     try {
@@ -252,7 +390,7 @@ function App() {
       if (res.ok) {
         const data = await res.json();
         showToast(
-          `Test Tx (${formatRupees(amountPaise)}): ${data.decision} - ${data.reason}`,
+          `Tx (${formatRupees(amountPaise)}): ${data.decision} - ${data.reason}`,
           data.decision === "ALLOWED" ? "success" : "error"
         );
       }
@@ -262,400 +400,721 @@ function App() {
   };
 
   // Calculate daily spent total from allowed transactions today
+  const todayIsoDate = new Date().toISOString().split('T')[0];
   const todaySpentPaise = transactions
-    .filter((t) => t.decision === "ALLOWED")
+    .filter((t) => t.decision === "ALLOWED" && t.timestamp && t.timestamp.startsWith(todayIsoDate))
     .reduce((sum, t) => sum + t.amount, 0);
 
   const isKilled = policy.status === "KILLED";
-  const budgetProgressPercent = Math.min(100, (todaySpentPaise / policy.daily_budget) * 100);
+  const budgetProgressPercent = Math.min(100, (todaySpentPaise / (policy.daily_budget || 1)) * 100);
 
   // Filter audit events
-  const filteredAuditEvents = auditEvents.filter((ev) => {
-    if (auditFilter === "ALL") return true;
-    if (auditFilter === "KILL_SWITCH") return ev.event_type === "KILL_SWITCH_TOGGLED";
-    if (auditFilter === "POLICY") return ev.event_type === "POLICY_CHANGED";
-    if (auditFilter === "EVALUATION") return ev.event_type === "TX_EVALUATED";
-    return true;
-  });
+  const filteredAuditEvents = auditEvents
+    .filter((ev) => {
+      if (auditFilter === "ALL") return true;
+      if (auditFilter === "KILL_SWITCH") return ev.event_type === "KILL_SWITCH_TOGGLED";
+      if (auditFilter === "POLICY") return ev.event_type === "POLICY_CHANGED";
+      if (auditFilter === "EVALUATION") return ev.event_type === "TX_EVALUATED";
+      return true;
+    })
+    .filter((ev) => {
+      if (!auditSearch.trim()) return true;
+      const q = auditSearch.toLowerCase();
+      return (
+        ev.detail.toLowerCase().includes(q) ||
+        ev.event_type.toLowerCase().includes(q) ||
+        ev.actor.toLowerCase().includes(q)
+      );
+    });
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans">
-      {/* Toast Notification */}
+    <div className="min-h-screen bg-[#090d16] text-[#e6edf3] font-sans antialiased flex flex-col selection:bg-[#2f81f7]/30 selection:text-white">
+      {/* Toast Notification Banner */}
       {toast && (
-        <div
-          className={`fixed top-5 right-5 z-50 px-5 py-3.5 rounded-xl shadow-2xl flex items-center gap-3 border backdrop-blur-md transition-all duration-300 animate-bounce ${
-            toast.type === "error"
-              ? "bg-rose-950/90 border-rose-500/50 text-rose-200 glow-rose"
-              : "bg-emerald-950/90 border-emerald-500/50 text-emerald-200 glow-emerald"
-          }`}
-        >
-          {toast.type === "error" ? <AlertTriangle className="w-5 h-5 text-rose-400" /> : <CheckCircle2 className="w-5 h-5 text-emerald-400" />}
-          <span className="text-sm font-semibold">{toast.message}</span>
+        <div className="fixed top-4 right-4 z-50 animate-bounce">
+          <div
+            className={`px-4 py-3 rounded-xl shadow-2xl border text-xs font-medium font-mono flex items-center gap-2 backdrop-blur-md ${
+              toast.type === "error"
+                ? "bg-[#3c1e21]/90 text-[#f85149] border-[#f85149]/50"
+                : "bg-[#1b382b]/90 text-[#3fb950] border-[#2ea043]/50"
+            }`}
+          >
+            {toast.type === "error" ? <XCircle className="w-4 h-4" /> : <CheckCircle2 className="w-4 h-4" />}
+            <span>{toast.message}</span>
+          </div>
         </div>
       )}
 
-      {/* Header Bar */}
-      <header className="border-b border-slate-800 bg-slate-900/60 backdrop-blur-md sticky top-0 z-40">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+      {/* Main Navbar Header */}
+      <header className="border-b border-[#1f2638] bg-[#0d121f]/90 backdrop-blur-md sticky top-0 z-40">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4">
+          
           <div className="flex items-center gap-3">
-            <div className="p-2 bg-gradient-to-tr from-cyan-500 to-blue-600 rounded-xl shadow-lg shadow-cyan-500/20">
-              <Zap className="w-6 h-6 text-slate-950 fill-current" />
-            </div>
+            {/* Restored Original SVG Logo */}
+            <img src="/logo.svg" alt="CircuitBreaker Logo" className="w-10 h-10 rounded-lg shadow-sm" />
             <div>
               <div className="flex items-center gap-2">
-                <h1 className="text-xl font-bold tracking-tight text-white">CIRCUITBREAKER</h1>
-                <span className="text-[10px] uppercase tracking-widest px-2 py-0.5 rounded-md bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 font-mono">
-                  v1.0 Razorpay Buildathon
+                <h1 className="text-base sm:text-lg font-bold tracking-tight text-white font-mono bg-clip-text text-transparent bg-gradient-to-r from-white via-slate-100 to-slate-400">
+                  circuit breaker
+                </h1>
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-[#161f33] text-[#38bdf8] border border-[#2f81f7]/30 font-semibold tracking-wide">
+                  Razorpay Gate
                 </span>
               </div>
-              <p className="text-xs text-slate-400 hidden sm:block">
-                Agent Authorization & Payment Policy Enforcement Layer
+              <p className="text-[11px] text-[#8b949e] hidden sm:block">
+                AI Agent Payment Governance & Spend Control Center
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-4">
-            {/* Realtime Status Indicator */}
-            <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-800/80 border border-slate-700/60 text-xs font-medium">
-              <span
-                className={`w-2.5 h-2.5 rounded-full ${
-                  wsStatus === "CONNECTED"
-                    ? "bg-emerald-500 animate-pulse glow-emerald"
-                    : wsStatus === "CONNECTING"
-                    ? "bg-amber-500 animate-ping"
-                    : "bg-rose-500"
-                }`}
-              />
-              <span className="text-slate-300">
-                {wsStatus === "CONNECTED"
-                  ? "SYSTEM ONLINE (WS LIVE)"
-                  : wsStatus === "CONNECTING"
-                  ? "CONNECTING..."
-                  : "WEBSOCKET OFF"}
+          <div className="flex items-center gap-3">
+            {/* Realtime Live Clock */}
+            <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#131927] border border-[#232d42] text-xs font-mono">
+              <Clock className="w-3.5 h-3.5 text-[#38bdf8]" />
+              <span className="text-white font-bold tracking-wider">
+                {currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
               </span>
             </div>
 
-            {/* Refresh button */}
+            {/* Realtime WebSocket Status */}
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#131927] border border-[#232d42] text-xs font-mono">
+              <span
+                className={`w-2 h-2 rounded-full ${
+                  wsStatus === "CONNECTED"
+                    ? "bg-[#3fb950] shadow-[0_0_8px_#3fb950]"
+                    : wsStatus === "CONNECTING"
+                    ? "bg-[#d29922] animate-pulse"
+                    : "bg-[#f85149]"
+                }`}
+              />
+              <span className="text-[#8b949e] text-[11px] font-semibold">
+                {wsStatus === "CONNECTED" ? "LIVE SYNC ACTIVE" : wsStatus}
+              </span>
+            </div>
+
             <button
               onClick={fetchData}
               disabled={loading}
-              className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors border border-slate-700"
-              title="Refresh Data"
+              className="p-2 rounded-xl bg-[#161f33] hover:bg-[#202c48] text-[#e6edf3] transition-all border border-[#232d42] text-xs font-medium flex items-center gap-1.5 cursor-pointer hover:border-[#38bdf8]/50"
+              title="Sync latest data"
             >
-              <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin text-cyan-400" : ""}`} />
+              <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin text-[#38bdf8]" : ""}`} />
+              <span className="hidden md:inline font-mono text-xs">Sync</span>
             </button>
           </div>
+
         </div>
       </header>
 
       {/* Main Content Area */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
 
-        {/* HERO SECTION: KILL SWITCH & STATUS */}
+        {/* HERO EXECUTIVE SUMMARY CARD */}
         <div
-          className={`relative rounded-2xl p-6 sm:p-8 transition-all duration-500 overflow-hidden border ${
+          className={`rounded-2xl p-5 sm:p-6 space-y-5 border shadow-xl transition-all ${
             isKilled
-              ? "bg-gradient-to-r from-rose-950/80 via-slate-900 to-rose-950/60 border-rose-600/60 glow-rose animate-pulse-ring"
-              : "bg-slate-900/80 border-slate-800 glow-cyan"
+              ? "bg-gradient-to-b from-[#3c1e21] to-[#1e0f11] border-[#f85149]/60 shadow-rose-950/30"
+              : "bg-gradient-to-b from-[#131927] to-[#0d121f] border-[#1f2638] shadow-slate-950/40"
           }`}
         >
-          {/* Background grid accent */}
-          <div className="absolute inset-0 bg-[linear-gradient(to_right,#1e293b_1px,transparent_1px),linear-gradient(to_bottom,#1e293b_1px,transparent_1px)] bg-[size:4rem_4rem] [mask-image:radial-gradient(ellipse_60%_50%_at_50%_0%,#000_70%,transparent_100%)] opacity-25" />
-
-          <div className="relative z-10 flex flex-col md:flex-row items-center justify-between gap-6">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-[#232d42] pb-5">
             
-            {/* Agent Info & Status */}
-            <div className="space-y-3 text-center md:text-left">
-              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-slate-800/90 border border-slate-700 text-xs font-mono text-slate-300">
-                <Cpu className="w-3.5 h-3.5 text-cyan-400" />
-                <span>AGENT #{agentId}: {agent?.name || "ShoppingBot"}</span>
-                <span className="text-slate-500">|</span>
-                <span className="text-slate-400">KEY: {agent?.api_key || "sb_key_..."}</span>
+            <div className="space-y-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <Shield className="w-5 h-5 text-[#38bdf8]" />
+                <span className="text-base font-bold text-white font-mono tracking-wide">
+                  Agent #{agentId}: {agent?.name || "ShoppingBot"}
+                </span>
+                <span className="text-xs font-mono px-2.5 py-0.5 rounded-md bg-[#090d16] text-[#8b949e] border border-[#232d42]">
+                  Key: {agent?.api_key || "sb_key_..."}
+                </span>
               </div>
-
-              <div className="flex items-center justify-center md:justify-start gap-4">
-                <div
-                  className={`flex items-center gap-3 px-5 py-2.5 rounded-2xl border font-bold text-lg sm:text-xl tracking-wide ${
-                    isKilled
-                      ? "bg-rose-500/20 text-rose-400 border-rose-500/40 glow-rose"
-                      : "bg-emerald-500/10 text-emerald-400 border-emerald-500/30 glow-emerald"
-                  }`}
-                >
-                  {isKilled ? (
-                    <>
-                      <ShieldAlert className="w-7 h-7 text-rose-500 animate-bounce" />
-                      <span>AUTHORIZATION REVOKED (KILLED)</span>
-                    </>
-                  ) : (
-                    <>
-                      <ShieldCheck className="w-7 h-7 text-emerald-400" />
-                      <span>AGENT ACTIVE & AUTHORIZED</span>
-                    </>
-                  )}
-                </div>
+              
+              <div className="flex items-center gap-2">
+                {isKilled ? (
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold font-mono bg-rose-500/10 text-[#f85149] border border-[#f85149]/40">
+                    <ShieldAlert className="w-4 h-4" /> KILLED — ALL AGENT PAYMENTS BLOCKED
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold font-mono bg-emerald-500/10 text-[#3fb950] border border-[#2ea043]/40">
+                    <ShieldCheck className="w-4 h-4" /> AUTHORIZED — GOVERNANCE ACTIVE & PROTECTED
+                  </span>
+                )}
               </div>
-
-              <p className="text-sm text-slate-400 max-w-xl">
-                {isKilled
-                  ? "🚨 All incoming agent transactions are instantly blocked before reaching Razorpay. Click 'RESUME' to restore payment authority."
-                  : "🟢 Every transaction is evaluated against strict spend caps, category whitelists, and time windows before creating Razorpay orders."}
-              </p>
             </div>
 
-            {/* Giant Kill Switch Button */}
-            <div className="w-full md:w-auto flex flex-col items-center">
+            {/* Prominent Emergency Kill Switch Toggle */}
+            <div className="flex items-center gap-3">
               <button
                 onClick={handleKillToggle}
-                className={`w-full sm:w-72 px-8 py-5 rounded-2xl font-black tracking-wider text-base uppercase flex items-center justify-center gap-3 shadow-2xl transition-all duration-300 transform active:scale-95 cursor-pointer ${
+                className={`w-full md:w-auto px-6 py-3 rounded-xl text-xs font-bold uppercase font-mono tracking-wider flex items-center justify-center gap-2.5 transition-all cursor-pointer shadow-lg active:scale-95 ${
                   isKilled
-                    ? "bg-gradient-to-r from-emerald-600 via-teal-500 to-emerald-600 hover:from-emerald-500 hover:to-teal-400 text-slate-950 shadow-emerald-500/30 glow-emerald"
-                    : "bg-gradient-to-r from-rose-600 via-red-500 to-rose-700 hover:from-rose-500 hover:to-red-600 text-white shadow-rose-600/40 glow-rose"
+                    ? "bg-gradient-to-r from-[#2ea043] to-[#3fb950] hover:from-[#3fb950] hover:to-[#2ea043] text-white border border-[#3fb950] shadow-emerald-950/50"
+                    : "bg-gradient-to-r from-[#da3633] to-[#f85149] hover:from-[#f85149] hover:to-[#da3633] text-white border border-[#f85149] shadow-rose-950/50"
                 }`}
               >
-                <Power className="w-6 h-6 stroke-[3]" />
-                <span>{isKilled ? "RESUME AGENT" : "KILL SWITCH"}</span>
+                <Power className="w-4 h-4 stroke-[2.5]" />
+                <span>{isKilled ? "Restore Payment Authority" : "Revoke Payment Authority (Kill Switch)"}</span>
               </button>
-              <span className="text-[11px] font-mono text-slate-500 mt-2">
-                {isKilled ? "Click to reinstate agent payment authority" : "Click to instantly freeze agent spending"}
-              </span>
             </div>
 
           </div>
 
-          {/* Quick Stats Grid */}
-          <div className="mt-8 pt-6 border-t border-slate-800/80 grid grid-cols-2 sm:grid-cols-4 gap-4">
-            <div className="p-4 rounded-xl bg-slate-950/60 border border-slate-800">
-              <span className="text-xs text-slate-400 font-medium">Per-Tx Limit</span>
-              <div className="text-xl font-bold text-slate-100 font-mono mt-1">
-                {formatRupees(policy.per_transaction_limit)}
+          {/* 4 Stat Metric Cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            
+            {/* Daily Spend Tracker */}
+            <div className="p-4 rounded-xl bg-[#090d16]/70 border border-[#232d42] space-y-2 hover:border-[#2f81f7]/40 transition-colors">
+              <div className="flex items-center justify-between text-xs text-[#8b949e] font-medium">
+                <div className="flex items-center gap-2">
+                  <Wallet className="w-4 h-4 text-[#38bdf8]" />
+                  <span className="font-semibold text-slate-300">Daily Spend Tracker</span>
+                </div>
+                <span className="font-mono text-xs text-[#38bdf8] font-bold">{budgetProgressPercent.toFixed(0)}%</span>
               </div>
-            </div>
-
-            <div className="p-4 rounded-xl bg-slate-950/60 border border-slate-800">
-              <span className="text-xs text-slate-400 font-medium">Daily Budget</span>
-              <div className="text-xl font-bold text-slate-100 font-mono mt-1">
-                {formatRupees(policy.daily_budget)}
+              <div className="text-xl font-bold font-mono text-white">
+                {formatRupees(todaySpentPaise)} <span className="text-xs text-[#8b949e] font-sans font-normal">/ {formatRupees(policy.daily_budget)}</span>
               </div>
-            </div>
-
-            <div className="p-4 rounded-xl bg-slate-950/60 border border-slate-800">
-              <span className="text-xs text-slate-400 font-medium">Spent Today</span>
-              <div className="text-xl font-bold text-cyan-400 font-mono mt-1">
-                {formatRupees(todaySpentPaise)}
-              </div>
-              <div className="w-full bg-slate-800 h-1.5 rounded-full mt-2 overflow-hidden">
+              <div className="w-full bg-[#182030] h-2 rounded-full overflow-hidden border border-[#232d42]">
                 <div
-                  className="bg-cyan-500 h-full transition-all duration-500"
+                  className={`h-full transition-all duration-500 rounded-full ${
+                    budgetProgressPercent >= 90
+                      ? "bg-[#f85149]"
+                      : budgetProgressPercent >= 70
+                      ? "bg-[#d29922]"
+                      : "bg-[#2f81f7]"
+                  }`}
                   style={{ width: `${budgetProgressPercent}%` }}
                 />
               </div>
             </div>
 
-            <div className="p-4 rounded-xl bg-slate-950/60 border border-slate-800">
-              <span className="text-xs text-slate-400 font-medium">Active Window</span>
-              <div className="text-xl font-bold text-emerald-400 font-mono mt-1">
-                {policy.active_window_start || "00:00"} - {policy.active_window_end || "23:59"}
+            {/* Per-Transaction Cap */}
+            <div className="p-4 rounded-xl bg-[#090d16]/70 border border-[#232d42] space-y-2 hover:border-[#2f81f7]/40 transition-colors">
+              <div className="flex items-center gap-2 text-xs text-[#8b949e] font-medium">
+                <CreditCard className="w-4 h-4 text-[#2f81f7]" />
+                <span className="font-semibold text-slate-300">Single Purchase Cap</span>
               </div>
+              <div className="text-xl font-bold font-mono text-white">
+                {formatRupees(policy.per_transaction_limit)}
+              </div>
+              <span className="text-[11px] text-[#8b949e] block">Maximum limit per single order</span>
             </div>
+
+            {/* Active Time Window */}
+            <div className="p-4 rounded-xl bg-[#090d16]/70 border border-[#232d42] space-y-2 hover:border-[#3fb950]/40 transition-colors">
+              <div className="flex items-center justify-between text-xs text-[#8b949e] font-medium">
+                <div className="flex items-center gap-2">
+                  <Clock className="w-4 h-4 text-[#3fb950]" />
+                  <span className="font-semibold text-slate-300">Active Window</span>
+                </div>
+                <span className="font-mono text-[10px] text-[#38bdf8] font-bold">
+                  NOW {currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                </span>
+              </div>
+              <div className="text-xl font-bold font-mono text-[#3fb950]">
+                {policy.active_window_start || "00:00"} – {policy.active_window_end || "23:59"}
+              </div>
+              <span className="text-[11px] text-[#8b949e] block">Real-time allowed payment hours</span>
+            </div>
+
+            {/* Total Evaluated Attempts */}
+            <div className="p-4 rounded-xl bg-[#090d16]/70 border border-[#232d42] space-y-2 hover:border-[#d29922]/40 transition-colors">
+              <div className="flex items-center gap-2 text-xs text-[#8b949e] font-medium">
+                <Activity className="w-4 h-4 text-[#d29922]" />
+                <span className="font-semibold text-slate-300">Evaluated Attempts</span>
+              </div>
+              <div className="text-xl font-bold font-mono text-white">
+                {transactions.length} <span className="text-xs text-[#8b949e] font-sans font-normal">Orders</span>
+              </div>
+              <span className="text-[11px] text-[#8b949e] block">Total processed policy evaluations</span>
+            </div>
+
           </div>
         </div>
 
-        {/* MIDDLE SECTION: SPLIT PANELS (POLICY EDITOR vs LIVE TRANSACTION FEED) */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        {/* INTUITIVE TABBED NAVIGATION BAR (No emojis, clean vector icons) */}
+        <div className="flex flex-wrap items-center gap-2 border-b border-[#1f2638] pb-3">
+          <button
+            onClick={() => setActiveTab("copilot")}
+            className={`px-4 py-2.5 rounded-xl font-mono text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
+              activeTab === "copilot"
+                ? "bg-[#2f81f7] text-white shadow-lg shadow-[#2f81f7]/25 border border-[#38bdf8]/40"
+                : "bg-[#131927] text-[#8b949e] hover:text-white hover:bg-[#161f33] border border-[#232d42]"
+            }`}
+          >
+            <Bot className="w-4 h-4 text-[#38bdf8]" />
+            <span>AI Copilot & Intent Parser</span>
+          </button>
 
-          {/* LEFT: POLICY CONFIGURATION EDITOR (5 Cols) */}
-          <div className="lg:col-span-5 bg-slate-900/80 rounded-2xl p-6 border border-slate-800 flex flex-col justify-between">
-            <div>
-              <div className="flex items-center gap-2 mb-4 border-b border-slate-800 pb-3">
-                <Sliders className="w-5 h-5 text-cyan-400" />
-                <h2 className="text-base font-bold text-white tracking-wide">POLICY ENFORCEMENT RULES</h2>
+          <button
+            onClick={() => setActiveTab("rules")}
+            className={`px-4 py-2.5 rounded-xl font-mono text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
+              activeTab === "rules"
+                ? "bg-[#2f81f7] text-white shadow-lg shadow-[#2f81f7]/25 border border-[#38bdf8]/40"
+                : "bg-[#131927] text-[#8b949e] hover:text-white hover:bg-[#161f33] border border-[#232d42]"
+            }`}
+          >
+            <Sliders className="w-4 h-4 text-[#38bdf8]" />
+            <span>Policy Rules & Caps</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab("transactions")}
+            className={`px-4 py-2.5 rounded-xl font-mono text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
+              activeTab === "transactions"
+                ? "bg-[#2f81f7] text-white shadow-lg shadow-[#2f81f7]/25 border border-[#38bdf8]/40"
+                : "bg-[#131927] text-[#8b949e] hover:text-white hover:bg-[#161f33] border border-[#232d42]"
+            }`}
+          >
+            <Activity className="w-4 h-4 text-[#38bdf8]" />
+            <span>Live Activity Feed ({transactions.length})</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab("audit")}
+            className={`px-4 py-2.5 rounded-xl font-mono text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
+              activeTab === "audit"
+                ? "bg-[#2f81f7] text-white shadow-lg shadow-[#2f81f7]/25 border border-[#38bdf8]/40"
+                : "bg-[#131927] text-[#8b949e] hover:text-white hover:bg-[#161f33] border border-[#232d42]"
+            }`}
+          >
+            <FileText className="w-4 h-4 text-[#38bdf8]" />
+            <span>Audit Log ({filteredAuditEvents.length})</span>
+          </button>
+        </div>
+
+        {/* TAB 1: AI COPILOT & INTENT PARSER */}
+        {activeTab === "copilot" && (
+          <div className="bg-[#131927] border border-[#1f2638] rounded-2xl p-6 space-y-6 shadow-xl">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#232d42] pb-4">
+              <div className="space-y-1">
+                <h2 className="text-sm font-bold text-white font-mono uppercase tracking-wider flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-[#38bdf8]" /> AI Transaction Intent Copilot
+                </h2>
+                <p className="text-xs text-[#8b949e]">
+                  Enter plain language payment requests (e.g., "Buy groceries for ₹800"). The AI parses the request and CircuitBreaker enforces payment rules before calling Razorpay.
+                </p>
               </div>
-
-              <form onSubmit={handleSavePolicy} className="space-y-4">
-                {/* Limits */}
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs text-slate-400 mb-1 font-medium">Per-Transaction (₹)</label>
-                    <div className="relative">
-                      <span className="absolute left-3 top-2.5 text-slate-500 font-mono text-sm">₹</span>
-                      <input
-                        type="number"
-                        min="1"
-                        value={formLimit}
-                        onChange={(e) => setFormLimit(e.target.value)}
-                        className="w-full bg-slate-950 border border-slate-700/80 rounded-xl pl-7 pr-3 py-2 text-sm text-slate-100 font-mono focus:border-cyan-500 focus:outline-none"
-                        required
-                      />
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs text-slate-400 mb-1 font-medium">Daily Budget (₹)</label>
-                    <div className="relative">
-                      <span className="absolute left-3 top-2.5 text-slate-500 font-mono text-sm">₹</span>
-                      <input
-                        type="number"
-                        min="1"
-                        value={formBudget}
-                        onChange={(e) => setFormBudget(e.target.value)}
-                        className="w-full bg-slate-950 border border-slate-700/80 rounded-xl pl-7 pr-3 py-2 text-sm text-slate-100 font-mono focus:border-cyan-500 focus:outline-none"
-                        required
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                {/* Categories */}
-                <div>
-                  <label className="block text-xs text-slate-400 mb-1 font-medium">
-                    Allowed Categories <span className="text-slate-500 font-normal">(comma-separated)</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={formAllowed}
-                    onChange={(e) => setFormAllowed(e.target.value)}
-                    placeholder="groceries, subscriptions, travel"
-                    className="w-full bg-slate-950 border border-slate-700/80 rounded-xl px-3 py-2 text-sm text-slate-100 font-mono focus:border-cyan-500 focus:outline-none"
-                  />
-                  <div className="flex flex-wrap gap-1.5 mt-2">
-                    {formAllowed.split(",").map((cat, i) => cat.trim() && (
-                      <span key={i} className="px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-xs font-mono">
-                        ✓ {cat.trim()}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-xs text-slate-400 mb-1 font-medium">
-                    Blocked Categories <span className="text-slate-500 font-normal">(comma-separated)</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={formBlocked}
-                    onChange={(e) => setFormBlocked(e.target.value)}
-                    placeholder="gambling, crypto, luxury"
-                    className="w-full bg-slate-950 border border-slate-700/80 rounded-xl px-3 py-2 text-sm text-slate-100 font-mono focus:border-rose-500 focus:outline-none"
-                  />
-                  <div className="flex flex-wrap gap-1.5 mt-2">
-                    {formBlocked.split(",").map((cat, i) => cat.trim() && (
-                      <span key={i} className="px-2 py-0.5 rounded-md bg-rose-500/10 text-rose-400 border border-rose-500/20 text-xs font-mono">
-                        ✕ {cat.trim()}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Active Window */}
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs text-slate-400 mb-1 font-medium">Active Window Start</label>
-                    <input
-                      type="text"
-                      value={formStart}
-                      onChange={(e) => setFormStart(e.target.value)}
-                      placeholder="09:00"
-                      className="w-full bg-slate-950 border border-slate-700/80 rounded-xl px-3 py-2 text-sm text-slate-100 font-mono focus:border-cyan-500 focus:outline-none"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs text-slate-400 mb-1 font-medium">Active Window End</label>
-                    <input
-                      type="text"
-                      value={formEnd}
-                      onChange={(e) => setFormEnd(e.target.value)}
-                      placeholder="21:00"
-                      className="w-full bg-slate-950 border border-slate-700/80 rounded-xl px-3 py-2 text-sm text-slate-100 font-mono focus:border-cyan-500 focus:outline-none"
-                    />
-                  </div>
-                </div>
-
-                <button
-                  type="submit"
-                  disabled={savingPolicy}
-                  className="w-full mt-2 py-3 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-slate-950 font-bold text-sm uppercase tracking-wider transition-all duration-200 shadow-lg shadow-cyan-500/20 active:scale-98 cursor-pointer"
-                >
-                  {savingPolicy ? "Enforcing Rules..." : "UPDATE & ENFORCE POLICY"}
-                </button>
-              </form>
             </div>
 
-            {/* Quick Interactive Scenario Simulator Buttons */}
-            <div className="mt-6 pt-4 border-t border-slate-800">
-              <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider block mb-2">
-                Quick Test Scenarios (Manual Fire)
-              </span>
-              <div className="grid grid-cols-3 gap-2">
+            {/* Input Form */}
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                handleSendIntent(intentInput);
+              }}
+              className="space-y-4"
+            >
+              <div className="flex flex-col sm:flex-row gap-3">
+                <input
+                  type="text"
+                  value={intentInput}
+                  onChange={(e) => setIntentInput(e.target.value)}
+                  placeholder="e.g. Buy groceries from my usual store for around ₹1500"
+                  className="flex-1 bg-[#090d16] border border-[#232d42] rounded-xl px-4 py-3 text-xs font-mono text-white focus:border-[#38bdf8] focus:outline-none placeholder-[#484f58] shadow-inner"
+                  required
+                />
+                <button
+                  type="submit"
+                  disabled={intentLoading}
+                  className="px-6 py-3 rounded-xl bg-gradient-to-r from-[#1f6feb] to-[#2f81f7] hover:from-[#2f81f7] hover:to-[#388bfd] text-white font-mono text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 transition-all cursor-pointer shrink-0 disabled:opacity-50 shadow-md"
+                >
+                  {intentLoading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                  <span>Parse & Evaluate</span>
+                </button>
+              </div>
+
+              {/* Demo Scenario Chips */}
+              <div className="space-y-2 pt-1">
+                <span className="text-xs font-mono text-[#8b949e] font-semibold">Click a Demo Scenario to Test:</span>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handlePresetIntent("Buy groceries for ₹800")}
+                    className="px-3 py-1.5 rounded-lg bg-[#090d16] hover:bg-[#161f33] text-xs font-mono text-[#3fb950] border border-[#2ea043]/40 transition-all flex items-center gap-1.5 cursor-pointer shadow-sm"
+                  >
+                    <CheckCircle2 className="w-3.5 h-3.5 text-[#3fb950]" /> ₹800 Groceries (Allowed Scenario)
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handlePresetIntent("Buy groceries for ₹5000")}
+                    className="px-3 py-1.5 rounded-lg bg-[#090d16] hover:bg-[#161f33] text-xs font-mono text-[#f85149] border border-[#f85149]/40 transition-all flex items-center gap-1.5 cursor-pointer shadow-sm"
+                  >
+                    <XCircle className="w-3.5 h-3.5 text-[#f85149]" /> ₹5,000 Groceries (Over Limit Scenario)
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handlePresetIntent("Buy something from a gambling website for ₹500")}
+                    className="px-3 py-1.5 rounded-lg bg-[#090d16] hover:bg-[#161f33] text-xs font-mono text-[#d29922] border border-[#d29922]/40 transition-all flex items-center gap-1.5 cursor-pointer shadow-sm"
+                  >
+                    <XCircle className="w-3.5 h-3.5 text-[#d29922]" /> ₹500 Gambling (Blocked Category Scenario)
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handlePresetIntent("Buy headphones for ₹1200")}
+                    className="px-3 py-1.5 rounded-lg bg-[#090d16] hover:bg-[#161f33] text-xs font-mono text-[#a5d6ff] border border-[#232d42] transition-all flex items-center gap-1.5 cursor-pointer shadow-sm"
+                  >
+                    <Zap className="w-3.5 h-3.5 text-[#38bdf8]" /> ₹1,200 Headphones (Kill Switch Test)
+                  </button>
+                </div>
+              </div>
+            </form>
+
+            {/* Results Display */}
+            {intentResult && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+                {/* AI Interpretation */}
+                <div className="p-5 rounded-xl bg-[#090d16] border border-[#232d42] space-y-3 font-mono text-xs shadow-md">
+                  <div className="flex items-center justify-between border-b border-[#232d42] pb-2">
+                    <span className="font-bold text-[#38bdf8] flex items-center gap-1.5 uppercase">
+                      <Bot className="w-4 h-4" /> AI Interpretation
+                    </span>
+                    <span className="text-[10px] text-[#8b949e]">Extracted Intent</span>
+                  </div>
+
+                  {intentResult.intent ? (
+                    <div className="space-y-2.5">
+                      <div className="flex justify-between py-1 border-b border-[#161f33]">
+                        <span className="text-[#8b949e]">Extracted Amount:</span>
+                        <span className="font-bold text-white">
+                          {intentResult.intent.amount ? formatRupees(intentResult.intent.amount * 100) : "-"}
+                        </span>
+                      </div>
+                      <div className="flex justify-between py-1 border-b border-[#161f33]">
+                        <span className="text-[#8b949e]">Category:</span>
+                        <span className="text-[#a5d6ff] capitalize font-semibold">{intentResult.intent.category || "-"}</span>
+                      </div>
+                      <div className="flex justify-between py-1 border-b border-[#161f33]">
+                        <span className="text-[#8b949e]">Merchant:</span>
+                        <span className="text-slate-300">{intentResult.intent.merchant || "Standard Vendor"}</span>
+                      </div>
+                      <div className="flex justify-between py-1">
+                        <span className="text-[#8b949e]">Reason:</span>
+                        <span className="text-slate-300 text-right max-w-[200px] truncate">{intentResult.intent.reason || "-"}</span>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="py-4 text-[#f85149] text-center font-mono flex items-center justify-center gap-2">
+                      <AlertTriangle className="w-4 h-4" /> {intentResult.error || "Unable to understand transaction intent"}
+                    </div>
+                  )}
+                </div>
+
+                {/* CircuitBreaker Decision */}
+                <div className={`p-5 rounded-xl bg-[#090d16] border space-y-3 font-mono text-xs shadow-md ${
+                  intentResult.decision?.status === "ALLOWED" ? "border-[#2ea043]/80 shadow-emerald-950/20" : "border-[#f85149]/80 shadow-rose-950/20"
+                }`}>
+                  <div className="flex items-center justify-between border-b border-[#232d42] pb-2">
+                    <span className="font-bold text-[#3fb950] flex items-center gap-1.5 uppercase">
+                      <ShieldCheck className="w-4 h-4 text-[#2f81f7]" /> CircuitBreaker Gate Decision
+                    </span>
+                    <span className="text-[10px] text-[#8b949e]">Governance Check</span>
+                  </div>
+
+                  {intentResult.decision ? (
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[#8b949e]">Status:</span>
+                        <span className={`px-3 py-1 rounded-lg text-xs font-bold uppercase ${
+                          intentResult.decision.status === "ALLOWED"
+                            ? "bg-[#1b382b] text-[#3fb950] border border-[#2ea043]"
+                            : "bg-[#3c1e21] text-[#f85149] border border-[#f85149]"
+                        }`}>
+                          {intentResult.decision.status}
+                        </span>
+                      </div>
+
+                      <div>
+                        <span className="text-[#8b949e] block mb-1">Reason:</span>
+                        <p className="text-slate-200 bg-[#131927] p-2.5 rounded-lg border border-[#232d42] leading-relaxed">
+                          {intentResult.decision.reason}
+                        </p>
+                      </div>
+
+                      {intentResult.razorpay_order_id && (
+                        <div className="pt-2 border-t border-[#232d42] flex items-center justify-between">
+                          <span className="text-[#8b949e]">Razorpay Order:</span>
+                          <button
+                            type="button"
+                            onClick={() => copyToClipboard(intentResult.razorpay_order_id)}
+                            className="bg-[#131927] hover:bg-[#202c48] px-3 py-1 rounded-lg border border-[#232d42] text-[#38bdf8] font-bold flex items-center gap-1.5 cursor-pointer"
+                          >
+                            <span>{intentResult.razorpay_order_id}</span>
+                            <Copy className="w-3.5 h-3.5 text-[#8b949e]" />
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="py-4 text-[#8b949e] text-center font-mono">
+                      No payment attempted (uncertain AI intent).
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Quick Direct Payment Test Bar */}
+            <div className="pt-4 border-t border-[#232d42] space-y-3">
+              <span className="text-xs font-mono text-[#8b949e] font-semibold">1-Click Direct API Payment Tests:</span>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <button
                   onClick={() => handleTestTx(80000, "groceries", "FreshMart")}
-                  className="px-2.5 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-[11px] font-medium text-emerald-300 border border-slate-700 transition-colors text-center"
+                  className="px-3 py-2.5 rounded-xl bg-[#090d16] hover:bg-[#161f33] text-xs font-mono font-medium text-[#3fb950] border border-[#2ea043]/40 transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-sm hover:border-[#3fb950]"
                 >
-                  ₹800 Groceries
+                  <CheckCircle2 className="w-3.5 h-3.5" /> ₹800 Groceries (Test Pass)
                 </button>
 
                 <button
                   onClick={() => handleTestTx(500000, "groceries", "Amazon")}
-                  className="px-2.5 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-[11px] font-medium text-rose-300 border border-slate-700 transition-colors text-center"
+                  className="px-3 py-2.5 rounded-xl bg-[#090d16] hover:bg-[#161f33] text-xs font-mono font-medium text-[#f85149] border border-[#f85149]/40 transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-sm hover:border-[#f85149]"
                 >
-                  ₹5,000 Over Limit
+                  <XCircle className="w-3.5 h-3.5" /> ₹5,000 Over-Limit (Test Block)
                 </button>
 
                 <button
                   onClick={() => handleTestTx(70000, "gambling", "Casino")}
-                  className="px-2.5 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-[11px] font-medium text-amber-300 border border-slate-700 transition-colors text-center"
+                  className="px-3 py-2.5 rounded-xl bg-[#090d16] hover:bg-[#161f33] text-xs font-mono font-medium text-[#d29922] border border-[#d29922]/40 transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-sm hover:border-[#d29922]"
                 >
-                  ₹700 Gambling
+                  <XCircle className="w-3.5 h-3.5" /> ₹700 Gambling (Test Block)
                 </button>
               </div>
             </div>
           </div>
+        )}
 
-          {/* RIGHT: LIVE TRANSACTION FEED (7 Cols) */}
-          <div className="lg:col-span-7 bg-slate-900/80 rounded-2xl p-6 border border-slate-800 flex flex-col h-[600px]">
-            <div className="flex items-center justify-between mb-4 border-b border-slate-800 pb-3">
-              <div className="flex items-center gap-2">
-                <Activity className="w-5 h-5 text-emerald-400 animate-pulse" />
-                <h2 className="text-base font-bold text-white tracking-wide">LIVE TRANSACTION EVALUATION FEED</h2>
+        {/* TAB 2: POLICY RULES & SPENDING CAPS */}
+        {activeTab === "rules" && (
+          <div className="bg-[#131927] border border-[#1f2638] rounded-2xl p-6 space-y-6 shadow-xl">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#232d42] pb-4">
+              <div className="space-y-1">
+                <h2 className="text-sm font-bold text-white font-mono uppercase tracking-wider flex items-center gap-2">
+                  <Sliders className="w-4 h-4 text-[#2f81f7]" /> Policy Enforcement & Spending Rules
+                </h2>
+                <p className="text-xs text-[#8b949e]">
+                  Configure spending limits, budget caps, permitted categories, and time windows enforced live by CircuitBreaker.
+                </p>
               </div>
-              <span className="text-xs text-slate-400 font-mono">
-                {transactions.length} Evaluation{transactions.length === 1 ? "" : "s"}
+
+              <button
+                type="button"
+                onClick={handleResetPolicy}
+                className="px-3 py-1.5 rounded-xl bg-[#090d16] hover:bg-[#161f33] text-xs font-mono text-[#38bdf8] border border-[#232d42] transition-colors flex items-center gap-1.5 cursor-pointer shrink-0"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                Reset Defaults
+              </button>
+            </div>
+
+            <form onSubmit={handleSavePolicy} className="space-y-6">
+              
+              {/* Financial Caps */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 p-5 rounded-xl bg-[#090d16] border border-[#232d42]">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-200 mb-1.5 font-mono flex items-center gap-1">
+                    Single Purchase Limit (₹)
+                  </label>
+                  <p className="text-[11px] text-[#8b949e] mb-2">Maximum rupees allowed for any single order</p>
+                  <div className="relative">
+                    <span className="absolute left-3.5 top-2.5 text-[#8b949e] font-mono text-sm">₹</span>
+                    <input
+                      type="number"
+                      min="1"
+                      value={formLimit}
+                      onChange={(e) => setFormLimit(e.target.value)}
+                      className="w-full bg-[#131927] border border-[#232d42] rounded-xl pl-8 pr-4 py-2 text-sm font-mono text-white focus:border-[#2f81f7] focus:outline-none"
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-200 mb-1.5 font-mono flex items-center gap-1">
+                    Daily Spend Budget (₹)
+                  </label>
+                  <p className="text-[11px] text-[#8b949e] mb-2">Maximum cumulative spend allowed per calendar day</p>
+                  <div className="relative">
+                    <span className="absolute left-3.5 top-2.5 text-[#8b949e] font-mono text-sm">₹</span>
+                    <input
+                      type="number"
+                      min="1"
+                      value={formBudget}
+                      onChange={(e) => setFormBudget(e.target.value)}
+                      className="w-full bg-[#131927] border border-[#232d42] rounded-xl pl-8 pr-4 py-2 text-sm font-mono text-white focus:border-[#2f81f7] focus:outline-none"
+                      required
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Category Rules */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 p-5 rounded-xl bg-[#090d16] border border-[#232d42]">
+                {/* Allowed Categories */}
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-200 mb-1 font-mono">Allowed Categories</label>
+                    <p className="text-[11px] text-[#8b949e] mb-2">Comma-separated list of permitted purchase types</p>
+                    <input
+                      type="text"
+                      value={formAllowed}
+                      onChange={(e) => setFormAllowed(e.target.value)}
+                      placeholder="groceries, subscriptions, travel"
+                      className="w-full bg-[#131927] border border-[#232d42] rounded-xl px-3.5 py-2 text-xs font-mono text-white focus:border-[#2ea043] focus:outline-none"
+                    />
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <div className="flex flex-wrap gap-1.5">
+                      {formAllowed.split(",").map((cat, i) => cat.trim() && (
+                        <span key={i} className="px-2.5 py-1 rounded-lg bg-[#1b382b] text-[#3fb950] border border-[#2ea043]/50 text-xs font-mono flex items-center gap-1">
+                          <Check className="w-3.5 h-3.5" /> {cat.trim()}
+                        </span>
+                      ))}
+                    </div>
+                    <div className="flex items-center gap-1.5 text-[11px] text-[#8b949e]">
+                      <span>Add Quick Preset:</span>
+                      {["travel", "cloud", "supplies"].map((preset) => (
+                        <button
+                          key={preset}
+                          type="button"
+                          onClick={() => addCategoryPreset("allowed", preset)}
+                          className="px-2 py-0.5 rounded-md bg-[#131927] hover:bg-[#202c48] text-[#38bdf8] border border-[#232d42] text-xs font-mono flex items-center gap-0.5 cursor-pointer"
+                        >
+                          + {preset}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Blocked Categories */}
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-200 mb-1 font-mono">Blocked Categories</label>
+                    <p className="text-[11px] text-[#8b949e] mb-2">Comma-separated list of strictly forbidden categories</p>
+                    <input
+                      type="text"
+                      value={formBlocked}
+                      onChange={(e) => setFormBlocked(e.target.value)}
+                      placeholder="gambling, crypto, luxury"
+                      className="w-full bg-[#131927] border border-[#232d42] rounded-xl px-3.5 py-2 text-xs font-mono text-white focus:border-[#f85149] focus:outline-none"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <div className="flex flex-wrap gap-1.5">
+                      {formBlocked.split(",").map((cat, i) => cat.trim() && (
+                        <span key={i} className="px-2.5 py-1 rounded-lg bg-[#3c1e21] text-[#f85149] border border-[#f85149]/50 text-xs font-mono flex items-center gap-1">
+                          <XCircle className="w-3.5 h-3.5" /> {cat.trim()}
+                        </span>
+                      ))}
+                    </div>
+                    <div className="flex items-center gap-1.5 text-[11px] text-[#8b949e]">
+                      <span>Add Quick Preset:</span>
+                      {["gaming", "luxury", "tickets"].map((preset) => (
+                        <button
+                          key={preset}
+                          type="button"
+                          onClick={() => addCategoryPreset("blocked", preset)}
+                          className="px-2 py-0.5 rounded-md bg-[#131927] hover:bg-[#202c48] text-[#f85149] border border-[#232d42] text-xs font-mono flex items-center gap-0.5 cursor-pointer"
+                        >
+                          + {preset}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Time Window */}
+              <div className="p-5 rounded-xl bg-[#090d16] border border-[#232d42] space-y-3">
+                <label className="block text-xs font-semibold text-slate-200 font-mono">Active Payment Window (24h Format)</label>
+                <p className="text-[11px] text-[#8b949e]">Transactions outside this daily window are automatically blocked by the gate.</p>
+                <div className="grid grid-cols-2 gap-4 max-w-md">
+                  <div>
+                    <label className="block text-[11px] text-[#8b949e] mb-1">Start Time</label>
+                    <input
+                      type="time"
+                      value={formStart}
+                      onChange={(e) => setFormStart(e.target.value)}
+                      className="w-full bg-[#131927] border border-[#232d42] rounded-xl px-3 py-2 text-xs font-mono text-white focus:border-[#38bdf8] focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] text-[#8b949e] mb-1">End Time</label>
+                    <input
+                      type="time"
+                      value={formEnd}
+                      onChange={(e) => setFormEnd(e.target.value)}
+                      className="w-full bg-[#131927] border border-[#232d42] rounded-xl px-3 py-2 text-xs font-mono text-white focus:border-[#38bdf8] focus:outline-none"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Submit Button */}
+              <div className="flex justify-end pt-2">
+                <button
+                  type="submit"
+                  disabled={savingPolicy}
+                  className="px-8 py-3 rounded-xl bg-gradient-to-r from-[#1f6feb] to-[#2f81f7] hover:from-[#2f81f7] hover:to-[#388bfd] text-white font-mono text-xs font-bold uppercase tracking-wider flex items-center gap-2 transition-all cursor-pointer shadow-lg disabled:opacity-50"
+                >
+                  {savingPolicy ? <RefreshCw className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />}
+                  <span>Save & Enforce Rules</span>
+                </button>
+              </div>
+
+            </form>
+          </div>
+        )}
+
+        {/* TAB 3: LIVE PAYMENT ACTIVITY */}
+        {activeTab === "transactions" && (
+          <div className="bg-[#131927] border border-[#1f2638] rounded-2xl p-6 space-y-4 shadow-xl">
+            <div className="flex items-center justify-between border-b border-[#232d42] pb-4">
+              <div className="space-y-1">
+                <h2 className="text-sm font-bold text-white font-mono uppercase tracking-wider flex items-center gap-2">
+                  <Activity className="w-4 h-4 text-[#2f81f7]" /> Live Transaction Ticker Stream
+                </h2>
+                <p className="text-xs text-[#8b949e]">
+                  Real-time stream of evaluated transaction attempts received via WebSocket live sync.
+                </p>
+              </div>
+              <span className="text-xs text-[#8b949e] font-mono font-semibold">
+                {transactions.length} Total Events
               </span>
             </div>
 
-            {/* Transaction Stream Scroll Container */}
-            <div className="flex-1 overflow-y-auto space-y-3 pr-1">
+            <div className="space-y-3 max-h-[600px] overflow-y-auto pr-1">
               {transactions.length === 0 ? (
-                <div className="h-full flex flex-col items-center justify-center text-slate-500 space-y-3">
-                  <CreditCard className="w-12 h-12 stroke-1 text-slate-600" />
+                <div className="py-16 flex flex-col items-center justify-center text-[#8b949e] space-y-3">
+                  <CreditCard className="w-10 h-10 stroke-1 text-[#8b949e]" />
                   <p className="text-sm font-medium">No transactions evaluated yet.</p>
-                  <p className="text-xs text-slate-600 text-center max-w-xs">
-                    Run the AI Agent simulator or click quick test buttons to evaluate transactions live.
+                  <p className="text-xs text-[#8b949e] text-center max-w-md">
+                    Switch to the "AI Copilot" tab to test AI payment requests, or run the CLI simulator.
                   </p>
                 </div>
               ) : (
                 transactions.map((tx) => {
                   const isAllowed = tx.decision === "ALLOWED";
-                  const timeStr = new Date(tx.timestamp).toLocaleTimeString();
+                  const timeStr = formatTimeString(tx.timestamp);
 
                   return (
                     <div
                       key={tx.id || `${tx.timestamp}-${Math.random()}`}
-                      className={`p-4 rounded-xl border transition-all duration-300 hover:translate-x-1 ${
+                      className={`p-4 rounded-xl border text-xs bg-[#090d16] transition-all shadow-sm ${
                         isAllowed
-                          ? "bg-slate-950/70 border-emerald-500/30 hover:border-emerald-500/60"
-                          : "bg-slate-950/70 border-rose-500/30 hover:border-rose-500/60"
+                          ? "border-[#2ea043]/60 hover:border-[#2ea043]"
+                          : "border-[#f85149]/60 hover:border-[#f85149]"
                       }`}
                     >
                       <div className="flex items-start justify-between gap-3">
                         <div className="flex items-center gap-3">
-                          <div
-                            className={`p-2 rounded-xl border ${
-                              isAllowed
-                                ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30"
-                                : "bg-rose-500/10 text-rose-400 border-rose-500/30"
-                            }`}
-                          >
+                          <div className={`p-2 rounded-lg ${isAllowed ? "bg-[#1b382b] text-[#3fb950]" : "bg-[#3c1e21] text-[#f85149]"}`}>
                             {isAllowed ? <CheckCircle2 className="w-5 h-5" /> : <XCircle className="w-5 h-5" />}
                           </div>
 
@@ -664,39 +1123,47 @@ function App() {
                               <span className="font-bold text-base text-white font-mono">
                                 {formatRupees(tx.amount)}
                               </span>
-                              <span className="text-xs px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700 font-mono">
+                              <span className="px-2.5 py-0.5 rounded-md bg-[#131927] text-[#e6edf3] border border-[#232d42] font-mono text-[11px] font-semibold">
                                 {tx.category}
                               </span>
-                              <span className="text-xs text-slate-400">@ {tx.merchant}</span>
+                              <span className="text-[#8b949e] text-xs">@ {tx.merchant}</span>
                             </div>
-                            <p className="text-xs text-slate-300 mt-1">{tx.reason}</p>
+                            <p className="text-[#8b949e] mt-1 font-sans text-xs">{tx.reason}</p>
                           </div>
                         </div>
 
-                        <div className="text-right flex flex-col items-end">
+                        <div className="text-right shrink-0">
                           <span
-                            className={`px-2.5 py-1 rounded-full text-xs font-black tracking-wider ${
+                            className={`px-3 py-1 rounded-lg text-xs font-bold font-mono uppercase ${
                               isAllowed
-                                ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40"
-                                : "bg-rose-500/20 text-rose-300 border border-rose-500/40"
+                                ? "bg-[#1b382b] text-[#3fb950] border border-[#2ea043]"
+                                : "bg-[#3c1e21] text-[#f85149] border border-[#f85149]"
                             }`}
                           >
                             {tx.decision}
                           </span>
-                          <span className="text-[10px] text-slate-500 font-mono mt-1">{timeStr}</span>
+                          <div className="text-[11px] text-[#8b949e] font-mono mt-1.5">{timeStr}</div>
                         </div>
                       </div>
 
-                      {/* Razorpay Order ID Pill */}
+                      {/* Razorpay Order ID */}
                       {isAllowed && tx.razorpay_order_id && (
-                        <div className="mt-3 pt-2 border-t border-slate-800/80 flex items-center justify-between text-[11px] font-mono text-cyan-400">
-                          <span className="flex items-center gap-1">
-                            <Lock className="w-3 h-3 text-cyan-500" />
-                            Razorpay Order Created:
+                        <div className="mt-3 pt-2.5 border-t border-[#232d42] flex items-center justify-between text-xs font-mono">
+                          <span className="flex items-center gap-1.5 text-[#8b949e]">
+                            <Lock className="w-3.5 h-3.5 text-[#2f81f7]" /> Razorpay Order Created:
                           </span>
-                          <span className="bg-cyan-950/80 px-2 py-0.5 rounded border border-cyan-800/50 font-bold">
-                            {tx.razorpay_order_id}
-                          </span>
+                          <button
+                            onClick={() => copyToClipboard(tx.razorpay_order_id)}
+                            className="bg-[#131927] hover:bg-[#202c48] px-3 py-1 rounded-lg border border-[#232d42] font-bold text-[#38bdf8] flex items-center gap-1.5 cursor-pointer"
+                            title="Click to copy Razorpay Order ID"
+                          >
+                            <span>{tx.razorpay_order_id}</span>
+                            {copiedOrderId === tx.razorpay_order_id ? (
+                              <Check className="w-3.5 h-3.5 text-[#3fb950]" />
+                            ) : (
+                              <Copy className="w-3.5 h-3.5 text-[#8b949e]" />
+                            )}
+                          </button>
                         </div>
                       )}
                     </div>
@@ -705,77 +1172,94 @@ function App() {
               )}
             </div>
           </div>
+        )}
 
-        </div>
+        {/* TAB 4: COMPLIANCE AUDIT LOG */}
+        {activeTab === "audit" && (
+          <div className="bg-[#131927] border border-[#1f2638] rounded-2xl p-6 space-y-4 font-mono text-xs shadow-xl">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-[#232d42] pb-4">
+              <div className="space-y-1">
+                <h2 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                  <FileText className="w-4 h-4 text-[#2f81f7]" /> Compliance Audit Trail & Event Logs
+                </h2>
+                <p className="text-xs text-[#8b949e] font-sans">
+                  Immutable audit trail recording all policy updates, kill switch activations, and payment evaluations.
+                </p>
+              </div>
 
-        {/* BOTTOM SECTION: AUDIT LOG TIMELINE */}
-        <div className="bg-slate-900/80 rounded-2xl p-6 border border-slate-800">
-          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-4 border-b border-slate-800 pb-3">
-            <div className="flex items-center gap-2">
-              <FileText className="w-5 h-5 text-cyan-400" />
-              <h2 className="text-base font-bold text-white tracking-wide">HUMAN & SYSTEM AUDIT TRAIL</h2>
+              {/* Audit Search & Filter Tabs */}
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="relative">
+                  <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-[#8b949e]" />
+                  <input
+                    type="text"
+                    placeholder="Search logs..."
+                    value={auditSearch}
+                    onChange={(e) => setAuditSearch(e.target.value)}
+                    className="bg-[#090d16] border border-[#232d42] rounded-xl pl-9 pr-3 py-1.5 text-xs text-white focus:border-[#2f81f7] focus:outline-none w-40 sm:w-52"
+                  />
+                </div>
+
+                <div className="flex items-center gap-1 bg-[#090d16] p-1 rounded-xl border border-[#232d42] text-[11px]">
+                  {["ALL", "KILL_SWITCH", "POLICY", "EVALUATION"].map((filterKey) => (
+                    <button
+                      key={filterKey}
+                      onClick={() => setAuditFilter(filterKey)}
+                      className={`px-3 py-1 rounded-lg transition-colors cursor-pointer ${
+                        auditFilter === filterKey
+                          ? "bg-[#202c48] text-[#38bdf8] font-bold"
+                          : "text-[#8b949e] hover:text-white"
+                      }`}
+                    >
+                      {filterKey.replace("_", " ")}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
 
-            {/* Filter Tabs */}
-            <div className="flex items-center gap-1.5 bg-slate-950 p-1 rounded-xl border border-slate-800 text-xs">
-              {["ALL", "KILL_SWITCH", "POLICY", "EVALUATION"].map((filterKey) => (
-                <button
-                  key={filterKey}
-                  onClick={() => setAuditFilter(filterKey)}
-                  className={`px-3 py-1 rounded-lg font-medium transition-colors ${
-                    auditFilter === filterKey
-                      ? "bg-slate-800 text-cyan-400 font-bold"
-                      : "text-slate-400 hover:text-white"
-                  }`}
-                >
-                  {filterKey.replace("_", " ")}
-                </button>
-              ))}
-            </div>
-          </div>
+            <div className="space-y-2.5 max-h-[600px] overflow-y-auto pr-1">
+              {filteredAuditEvents.length === 0 ? (
+                <p className="text-[#8b949e] text-center py-12 font-sans">No matching audit logs found.</p>
+              ) : (
+                filteredAuditEvents.map((ev) => {
+                  const dateStr = formatDateTimeString(ev.timestamp);
+                  const isHuman = ev.actor === "human";
 
-          <div className="space-y-2.5 max-h-72 overflow-y-auto pr-1">
-            {filteredAuditEvents.length === 0 ? (
-              <p className="text-xs text-slate-500 text-center py-6">No matching audit events logged.</p>
-            ) : (
-              filteredAuditEvents.map((ev) => {
-                const dateStr = new Date(ev.timestamp).toLocaleString();
-                const isHuman = ev.actor === "human";
+                  return (
+                    <div
+                      key={ev.id || `${ev.timestamp}-${Math.random()}`}
+                      className="flex flex-col sm:flex-row sm:items-center justify-between p-3 rounded-xl bg-[#090d16] border border-[#232d42] text-xs gap-3 hover:border-[#2f81f7]/30 transition-colors"
+                    >
+                      <div className="flex items-center gap-3 truncate">
+                        <span
+                          className={`px-2.5 py-1 rounded-md text-[10px] font-bold shrink-0 uppercase tracking-wider ${
+                            isHuman
+                              ? "bg-[#342415] text-[#d29922] border border-[#d29922]/50"
+                              : "bg-[#1f2d3d] text-[#38bdf8] border border-[#38bdf8]/50"
+                          }`}
+                        >
+                          ACTOR: {ev.actor}
+                        </span>
 
-                return (
-                  <div
-                    key={ev.id || `${ev.timestamp}-${Math.random()}`}
-                    className="flex items-center justify-between p-3 rounded-xl bg-slate-950/60 border border-slate-800/80 text-xs font-mono hover:bg-slate-950 transition-colors"
-                  >
-                    <div className="flex items-center gap-3">
-                      <span
-                        className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                          isHuman
-                            ? "bg-amber-500/20 text-amber-300 border border-amber-500/40"
-                            : "bg-cyan-500/20 text-cyan-300 border border-cyan-500/40"
-                        }`}
-                      >
-                        {ev.actor.toUpperCase()}
-                      </span>
+                        <span className="font-bold text-[#e6edf3] shrink-0">{ev.event_type}</span>
+                        <span className="text-[#8b949e] font-sans truncate">{ev.detail}</span>
+                      </div>
 
-                      <span className="font-bold text-slate-300">{ev.event_type}</span>
-
-                      <span className="text-slate-400 font-sans truncate max-w-lg">{ev.detail}</span>
+                      <span className="text-[#8b949e] text-[11px] shrink-0 font-mono">{dateStr}</span>
                     </div>
-
-                    <span className="text-slate-500 text-[11px] shrink-0">{dateStr}</span>
-                  </div>
-                );
-              })
-            )}
+                  );
+                })
+              )}
+            </div>
           </div>
-        </div>
+        )}
 
       </main>
 
       {/* Footer */}
-      <footer className="border-t border-slate-800/80 py-4 text-center text-xs text-slate-500 bg-slate-950">
-        <p>CircuitBreaker — Razorpay AI Buildathon 2026 Open Track</p>
+      <footer className="border-t border-[#1f2638] py-4 text-center text-xs font-mono text-[#8b949e] bg-[#0d121f]">
+        CircuitBreaker — Agent Payment Authorization & Governance Engine
       </footer>
     </div>
   );

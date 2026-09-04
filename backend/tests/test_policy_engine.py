@@ -54,6 +54,14 @@ def test_daily_budget(base_policy):
     assert res["decision"] == "BLOCKED"
     assert "would exceed daily budget" in res["reason"]
 
+def test_single_tx_exceeding_daily_budget(base_policy):
+    # Set per-tx limit higher than daily budget (e.g. ₹20,000 vs ₹10,000 budget)
+    base_policy["per_transaction_limit"] = 2000000
+    tx = {"amount": 1200000, "category": "groceries", "merchant": "SuperMarket"}
+    res = evaluate(base_policy, tx, daily_spent=0)
+    assert res["decision"] == "BLOCKED"
+    assert "would exceed daily budget" in res["reason"]
+
 def test_time_window(base_policy):
     tx = {"amount": 80000, "category": "groceries", "merchant": "FreshMart"}
     late_night = datetime(2026, 9, 3, 22, 30, 0)

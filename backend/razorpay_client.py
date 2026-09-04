@@ -1,7 +1,11 @@
 import os
+import pathlib
 import razorpay
 from dotenv import load_dotenv
 
+# Try loading .env from backend directory first, then fallback to current working directory
+backend_dir = pathlib.Path(__file__).parent
+load_dotenv(backend_dir / ".env")
 load_dotenv()
 
 RAZORPAY_KEY_ID = os.getenv("RAZORPAY_KEY_ID")

@@ -106,3 +106,20 @@ def test_kill_and_resume_switch():
         res_response = client.post("/agents/1/resume")
         assert res_response.status_code == 200
         assert res_response.json()["status"] == "ACTIVE"
+
+def test_daily_budget_exceeded_api():
+    with TestClient(app) as client:
+        # Set daily_budget to ₹2,500 (250,000 paise)
+        pol_res = client.patch("/agents/1/policy", json={"daily_budget": 250000})
+        assert pol_res.status_code == 200
+
+        # Tx 1: ₹1,500 (150,000 paise) -> ALLOWED
+        tx1 = client.post("/agents/1/transact", json={"amount": 150000, "category": "groceries", "merchant": "Store A"})
+        assert tx1.status_code == 200
+        assert tx1.json()["decision"] == "ALLOWED"
+
+        # Tx 2: ₹1,500 (150,000 paise) -> Cumulative ₹3,000 > ₹2,500 daily budget -> BLOCKED
+        tx2 = client.post("/agents/1/transact", json={"amount": 150000, "category": "groceries", "merchant": "Store B"})
+        assert tx2.status_code == 200
+        assert tx2.json()["decision"] == "BLOCKED"
+        assert "would exceed daily budget" in tx2.json()["reason"]

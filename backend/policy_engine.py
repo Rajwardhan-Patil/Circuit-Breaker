@@ -7,6 +7,21 @@ def format_rupees(paise: int) -> str:
         return f"₹{int(rupees):,}"
     return f"₹{rupees:,.2f}"
 
+def _parse_categories(raw_val) -> list:
+    if not raw_val:
+        return []
+    if isinstance(raw_val, str):
+        try:
+            parsed = json.loads(raw_val)
+            if isinstance(parsed, list):
+                return [str(item).strip() for item in parsed if str(item).strip()]
+        except Exception:
+            pass
+        return [item.strip() for item in raw_val.split(",") if item.strip()]
+    if isinstance(raw_val, list):
+        return [str(item).strip() for item in raw_val if str(item).strip()]
+    return []
+
 def evaluate(policy, transaction, daily_spent: int, current_time: datetime = None) -> dict:
     """
     Pure policy evaluation engine.
@@ -30,28 +45,14 @@ def evaluate(policy, transaction, daily_spent: int, current_time: datetime = Non
     window_start = get_val(policy, "active_window_start")
     window_end = get_val(policy, "active_window_end")
 
-    # Extract categories
-    raw_blocked = get_val(policy, "blocked_categories", [])
-    if isinstance(raw_blocked, str):
-        try:
-            blocked_categories = json.loads(raw_blocked)
-        except Exception:
-            blocked_categories = []
-    else:
-        blocked_categories = raw_blocked or []
-
-    raw_allowed = get_val(policy, "allowed_categories", [])
-    if isinstance(raw_allowed, str):
-        try:
-            allowed_categories = json.loads(raw_allowed)
-        except Exception:
-            allowed_categories = []
-    else:
-        allowed_categories = raw_allowed or []
+    # Extract categories and sanitize
+    blocked_categories = [c for c in _parse_categories(get_val(policy, "blocked_categories", [])) if c.lower() != "string"]
+    allowed_categories = [c for c in _parse_categories(get_val(policy, "allowed_categories", [])) if c.lower() != "string"]
 
     # Extract transaction fields
     amount = get_val(transaction, "amount", 0)
     category = get_val(transaction, "category", "")
+    req_cat = category.strip().lower()
 
     # Rule 1: Agent Status
     if status == "KILLED":
@@ -66,7 +67,7 @@ def evaluate(policy, transaction, daily_spent: int, current_time: datetime = Non
         }
 
     # Rule 2: Blocked Category
-    if category.lower() in [c.lower() for c in blocked_categories]:
+    if req_cat in [c.lower() for c in blocked_categories]:
         return {
             "decision": "BLOCKED",
             "reason": f"category '{category}' is not permitted"
@@ -74,7 +75,7 @@ def evaluate(policy, transaction, daily_spent: int, current_time: datetime = Non
 
     # Rule 3: Allowed Category
     if allowed_categories:
-        if category.lower() not in [c.lower() for c in allowed_categories]:
+        if req_cat not in [c.lower() for c in allowed_categories]:
             return {
                 "decision": "BLOCKED",
                 "reason": f"category '{category}' is not in allowed list"
@@ -88,10 +89,13 @@ def evaluate(policy, transaction, daily_spent: int, current_time: datetime = Non
         }
 
     # Rule 5: Daily Budget
-    if daily_spent + amount > daily_budget:
+    daily_spent_int = int(daily_spent or 0)
+    amount_int = int(amount or 0)
+    daily_budget_int = int(daily_budget or 0)
+    if daily_spent_int + amount_int > daily_budget_int:
         return {
             "decision": "BLOCKED",
-            "reason": f"would exceed daily budget of {format_rupees(daily_budget)} (already spent {format_rupees(daily_spent)} today)"
+            "reason": f"would exceed daily budget of {format_rupees(daily_budget_int)} (already spent {format_rupees(daily_spent_int)} today)"
         }
 
     # Rule 6: Active Time Window
