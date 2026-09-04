@@ -56,11 +56,11 @@ async def lifespan(app: FastAPI):
             per_transaction_limit=200000,   # ₹2,000
             daily_budget=1000000,           # ₹10,000
             allowed_categories=json.dumps(["groceries", "subscriptions"]),
-            blocked_categories=json.dumps(["gambling", "crypto"]),
-            active_window_start="09:00",
-            active_window_end="21:00",
+            active_window_start="00:00",
+            active_window_end="23:59",
             status="ACTIVE"
         )
+
         db.add(policy)
         db.commit()
 
@@ -317,8 +317,8 @@ async def reset_policy(agent_id: int, db: Session = Depends(get_db)):
     policy.daily_budget = 1000000
     policy.allowed_categories = json.dumps(["groceries", "subscriptions"])
     policy.blocked_categories = json.dumps(["gambling", "crypto"])
-    policy.active_window_start = "09:00"
-    policy.active_window_end = "21:00"
+    policy.active_window_start = "00:00"
+    policy.active_window_end = "23:59"
     policy.status = "ACTIVE"
     policy.updated_at = utcnow()
 
@@ -353,8 +353,8 @@ async def reset_policy(agent_id: int, db: Session = Depends(get_db)):
         "agent_id": agent_id,
         "per_transaction_limit": policy.per_transaction_limit,
         "daily_budget": policy.daily_budget,
-        "allowed_categories": policy.get_allowed_categories(),
-        "blocked_categories": policy.get_blocked_categories(),
+        "allowed_categories": json.loads(policy.allowed_categories),
+        "blocked_categories": json.loads(policy.blocked_categories),
         "active_window_start": policy.active_window_start,
         "active_window_end": policy.active_window_end,
         "status": policy.status,
@@ -367,6 +367,47 @@ async def reset_policy(agent_id: int, db: Session = Depends(get_db)):
     })
 
     return policy_data
+
+
+@app.post("/agents/{agent_id}/reset-demo")
+async def reset_demo(agent_id: int, db: Session = Depends(get_db)):
+    """Clean all transactions & audit history for a fresh demo run (₹0 spent)."""
+    # Delete transactions & audit events for agent
+    db.query(Transaction).filter(Transaction.agent_id == agent_id).delete()
+    db.query(AuditEvent).filter(AuditEvent.agent_id == agent_id).delete()
+    db.commit()
+
+    # Reset policy to default state
+    policy = db.query(Policy).filter(Policy.agent_id == agent_id).first()
+    if policy:
+        policy.per_transaction_limit = 200000
+        policy.daily_budget = 1000000
+        policy.allowed_categories = json.dumps(["groceries", "subscriptions"])
+        policy.blocked_categories = json.dumps(["gambling", "crypto"])
+        policy.active_window_start = "00:00"
+        policy.active_window_end = "23:59"
+        policy.status = "ACTIVE"
+        policy.updated_at = utcnow()
+        db.commit()
+
+    # Add fresh initial audit log
+    initial_audit = AuditEvent(
+        agent_id=agent_id,
+        event_type="POLICY_CHANGED",
+        actor="system",
+        detail="Fresh demo initialized: ₹0.00 spent, policy ACTIVE (₹2,000 cap, ₹10,000 budget)"
+    )
+    db.add(initial_audit)
+    db.commit()
+
+    # Broadcast reset event over WebSocket
+    await ws_manager.broadcast(agent_id, {
+        "type": "KILL_SWITCH",
+        "status": "ACTIVE",
+        "timestamp": utcnow().isoformat()
+    })
+
+    return {"message": "Demo data cleaned successfully. Spent reset to ₹0.00", "agent_id": agent_id}
 
 @app.post("/agents/{agent_id}/kill")
 async def kill_agent(agent_id: int, db: Session = Depends(get_db)):
@@ -421,6 +462,56 @@ async def resume_agent(agent_id: int, db: Session = Depends(get_db)):
     })
 
     return {"agent_id": agent_id, "status": "ACTIVE", "message": "Agent resumed successfully"}
+
+@app.post("/agents/{agent_id}/reset-demo")
+async def reset_demo(agent_id: int, db: Session = Depends(get_db)):
+    agent = db.query(Agent).filter(Agent.id == agent_id).first()
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent not found")
+    
+    db.query(Transaction).filter(Transaction.agent_id == agent_id).delete()
+    db.query(AuditEvent).filter(AuditEvent.agent_id == agent_id).delete()
+    db.query(PolicyHistory).filter(PolicyHistory.agent_id == agent_id).delete()
+    
+    policy = db.query(Policy).filter(Policy.agent_id == agent_id).first()
+    if policy:
+        policy.per_transaction_limit = 200000   # ₹2,000
+        policy.daily_budget = 1000000           # ₹10,000
+        policy.allowed_categories = json.dumps(["groceries", "subscriptions"])
+        policy.blocked_categories = json.dumps(["gambling", "crypto"])
+        policy.active_window_start = "00:00"
+        policy.active_window_end = "23:59"
+        policy.status = "ACTIVE"
+    else:
+        policy = Policy(
+            agent_id=agent_id,
+            per_transaction_limit=200000,
+            daily_budget=1000000,
+            allowed_categories=json.dumps(["groceries", "subscriptions"]),
+            blocked_categories=json.dumps(["gambling", "crypto"]),
+            active_window_start="00:00",
+            active_window_end="23:59",
+            status="ACTIVE"
+        )
+        db.add(policy)
+    
+    db.commit()
+
+    audit = AuditEvent(
+        agent_id=agent_id,
+        event_type="DEMO_RESET",
+        actor="operator",
+        detail="Demo state reset: wiped all transactions & audit history and restored default policy limits (₹0.00 spent)."
+    )
+    db.add(audit)
+    db.commit()
+
+    await ws_manager.broadcast(agent_id, {
+        "type": "DEMO_RESET",
+        "timestamp": utcnow().isoformat()
+    })
+
+    return {"agent_id": agent_id, "status": "RESET", "message": "Demo data cleaned and reset to fresh ₹0.00 spent state."}
 
 def format_iso_utc(dt: datetime) -> str:
     if dt is None:

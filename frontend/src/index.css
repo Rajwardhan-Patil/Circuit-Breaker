@@ -3,54 +3,53 @@
 @tailwind utilities;
 
 :root {
-  --bg-base: #0d1117;
-  --bg-surface: #161b22;
-  --bg-subtle: #21262d;
-  --border-color: #30363d;
-  --text-main: #e6edf3;
-  --text-muted: #8b949e;
-  --allowed-green: #2ea043;
-  --allowed-bg: rgba(46, 160, 67, 0.12);
-  --blocked-red: #f85149;
-  --blocked-bg: rgba(248, 81, 73, 0.15);
-  --accent-blue: #2f81f7;
+  --bg-console: #090B0D;
+  --surface-primary: #101417;
+  --surface-secondary: #14191C;
+  --border-console: #252C30;
+  --text-primary: #E5E7E8;
+  --text-secondary: #7D878D;
+  --status-green: #55C96B;
+  --status-red: #E24B4B;
+  --status-amber: #D6A94A;
+  --status-blue: #4FA3D1;
 }
 
 @layer base {
   body {
-    background-color: var(--bg-base);
-    color: var(--text-main);
-    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    background-color: var(--bg-console);
+    color: var(--text-primary);
+    font-family: 'IBM Plex Sans', system-ui, -apple-system, sans-serif;
     min-height: 100vh;
   }
 
-  /* Force tabular figures for numbers */
+  /* Force tabular figures for technical numbers & mono fields */
   .font-mono {
-    font-family: 'JetBrains Mono', monospace;
+    font-family: 'IBM Plex Mono', monospace;
     font-variant-numeric: tabular-nums;
   }
 
-  /* Visible, high-contrast keyboard focus states */
+  /* Clean precision focus states */
   *:focus-visible {
-    outline: 2px solid var(--accent-blue);
-    outline-offset: 2px;
+    outline: 1px solid var(--status-blue);
+    outline-offset: 1px;
   }
 }
 
-/* Control Room Ticker Scrollbar */
+/* Industrial Operator Console Scrollbar */
 ::-webkit-scrollbar {
-  width: 5px;
-  height: 5px;
+  width: 4px;
+  height: 4px;
 }
 ::-webkit-scrollbar-track {
-  background: #0d1117;
+  background: #090B0D;
 }
 ::-webkit-scrollbar-thumb {
-  background: #30363d;
-  border-radius: 2px;
+  background: #252C30;
+  border-radius: 0px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #484f58;
+  background: #3A444A;
 }
 
 /* Reduced Motion Respect */
@@ -60,3 +59,4 @@
     transition: none !important;
   }
 }
+

@@ -122,10 +122,22 @@ def get_status(base_url: str, agent_id: int):
     except requests.exceptions.RequestException as e:
         print(f"  ❌ Connection error: {e}")
 
+def reset_demo(base_url: str, agent_id: int):
+    endpoint = f"{base_url.rstrip('/')}/agents/{agent_id}/reset-demo"
+    print(f"\n[CLI COMMAND] Wiping demo history and resetting to ₹0.00 spent for Agent #{agent_id}...")
+    try:
+        res = requests.post(endpoint, timeout=5)
+        if res.status_code == 200:
+            print("  🟢 [SUCCESS] Demo state cleaned: transactions wiped, spending reset to ₹0.00, policies restored to default.")
+        else:
+            print(f"  ❌ HTTP Error {res.status_code}: {res.text}")
+    except requests.exceptions.RequestException as e:
+        print(f"  ❌ Connection error: {e}")
+
 def main():
     parser = argparse.ArgumentParser(description="CircuitBreaker AI Agent Simulator")
     parser.add_argument("--agent-id", type=int, default=1, help="Agent ID to transact for (default: 1)")
-    parser.add_argument("--action", type=str, default="transact", choices=["transact", "kill", "resume", "status", "reset-policy"], help="Action to execute")
+    parser.add_argument("--action", type=str, default="transact", choices=["transact", "kill", "resume", "status", "reset-policy", "reset-demo"], help="Action to execute")
     parser.add_argument("--scenario", type=str, default="normal", choices=["normal", "over-limit", "blocked-category", "loop"], help="Scenario to execute (when action=transact)")
     parser.add_argument("--url", type=str, default=DEFAULT_URL, help="Base URL of CircuitBreaker API")
     parser.add_argument("--interval", type=float, default=3.0, help="Interval between requests in seconds for 'loop' mode")
@@ -149,6 +161,8 @@ def main():
         get_status(args.url, args.agent_id)
     elif args.action == "reset-policy":
         reset_policy(args.url, args.agent_id)
+    elif args.action == "reset-demo":
+        reset_demo(args.url, args.agent_id)
     elif args.action == "transact":
         if args.scenario == "loop":
             print(f"Starting continuous transaction loop (interval: {args.interval}s). Press Ctrl+C to stop.\n")

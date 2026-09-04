@@ -7,7 +7,7 @@ CircuitBreaker is a policy enforcement and authorization layer that sits between
 
 ---
 
-## ⚡ Virtual Environment Activation Commands
+## Virtual Environment Activation Commands
 
 Before running python commands, activate the virtual environment in your terminal:
 
@@ -29,7 +29,8 @@ source venv/Scripts/activate
 
 ---
 
-## 🚀 Quick Start Guide
+## Quick Start Guide
+
 
 ### Step 1: Run the Backend API Server
 
@@ -64,27 +65,27 @@ npm run dev
 
 In a third terminal window (activate `venv` first):
 
-#### 🟢 Run Normal Transaction (₹800 Groceries -> ALLOWED)
+#### Scenario A: Normal Transaction (₹800 Groceries -> ALLOWED)
 ```bash
 python simulator/agent_sim.py --scenario normal
 ```
 
-#### 🔴 Run Over-Limit Transaction (₹5,000 Groceries -> BLOCKED)
+#### Scenario B: Over-Limit Transaction (₹5,000 Groceries -> BLOCKED)
 ```bash
 python simulator/agent_sim.py --scenario over-limit
 ```
 
-#### 🔴 Run Blocked Category Transaction (₹700 Gambling -> BLOCKED)
+#### Scenario C: Blocked Category Transaction (₹700 Gambling -> BLOCKED)
 ```bash
 python simulator/agent_sim.py --scenario blocked-category
 ```
 
-#### 🔄 Run Continuous Loop Scenario ("The Money Moment")
+#### Scenario D: Continuous Loop Demo ("The Money Moment")
 ```bash
 python simulator/agent_sim.py --scenario loop --interval 3.0
 ```
 
-#### ⚡ Additional CLI Actions
+#### Additional CLI Actions
 ```bash
 # Check agent status & active policy
 python simulator/agent_sim.py --action status
@@ -99,6 +100,7 @@ python simulator/agent_sim.py --action resume
 python simulator/agent_sim.py --action reset-policy
 ```
 
+
 ---
 
 ### Step 4: Run Automated Pytest Suite
@@ -111,7 +113,8 @@ python -m pytest backend/tests
 
 ---
 
-## 🛠️ Architecture Summary
+## Architecture Summary
+
 
 ```
    [ AI Agent (Simulator CLI) ]

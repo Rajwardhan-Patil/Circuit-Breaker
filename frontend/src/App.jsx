@@ -1,30 +1,40 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
-  Shield,
   ShieldAlert,
   ShieldCheck,
   Power,
   Zap,
-  CreditCard,
   Activity,
   Sliders,
   FileText,
   CheckCircle2,
   XCircle,
   RefreshCw,
-  Lock,
   Copy,
   Check,
   Plus,
   Search,
-  HelpCircle,
   Clock,
-  Wallet,
-  RotateCcw,
   Sparkles,
   Send,
   Bot,
-  AlertTriangle
+  AlertTriangle,
+  ChevronRight,
+  SlidersHorizontal,
+  Terminal,
+  RotateCcw,
+  Key,
+  User,
+  ExternalLink,
+  CreditCard,
+  Wallet,
+  ArrowUpRight,
+  Lock,
+  PanelLeft,
+  PanelLeftClose,
+  PanelLeftOpen,
+  LayoutDashboard,
+  UserCheck
 } from 'lucide-react';
 
 const API_BASE = "http://127.0.0.1:8000";
@@ -49,12 +59,15 @@ function parseUtcTimestamp(ts) {
 
 function formatTimeString(ts) {
   const date = parseUtcTimestamp(ts);
-  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
 }
 
 function formatDateTimeString(ts) {
   const date = parseUtcTimestamp(ts);
-  return date.toLocaleString([], { dateStyle: 'short', timeStyle: 'medium' });
+  const time = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+  const day = String(date.getDate()).padStart(2, '0');
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  return `${date.getFullYear()}-${month}-${day} ${time}`;
 }
 
 function App() {
@@ -65,8 +78,8 @@ function App() {
     daily_budget: 1000000,
     allowed_categories: ["groceries", "subscriptions"],
     blocked_categories: ["gambling", "crypto"],
-    active_window_start: "09:00",
-    active_window_end: "21:00",
+    active_window_start: "00:00",
+    active_window_end: "23:59",
     status: "ACTIVE"
   });
 
@@ -77,20 +90,26 @@ function App() {
   const [savingPolicy, setSavingPolicy] = useState(false);
   const [toast, setToast] = useState(null);
   const [copiedOrderId, setCopiedOrderId] = useState(null);
+  const [copiedApiKey, setCopiedApiKey] = useState(false);
   const [auditSearch, setAuditSearch] = useState("");
+  const [txSearch, setTxSearch] = useState("");
 
-  // Tab State: "copilot" | "rules" | "transactions" | "audit"
-  const [activeTab, setActiveTab] = useState("copilot");
+  // ChatGPT-Style Sidebar Toggle State (Click logo / icon to toggle)
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+
+  // Navigation View State: "CONTROL" | "AGENTS" | "TRANSACTIONS" | "AI INTENT" | "POLICIES" | "AUDIT"
+  const [navSection, setNavSection] = useState("CONTROL");
 
   // Policy Form State
   const [formLimit, setFormLimit] = useState(2000);
   const [formBudget, setFormBudget] = useState(10000);
   const [formAllowed, setFormAllowed] = useState("groceries, subscriptions");
   const [formBlocked, setFormBlocked] = useState("gambling, crypto");
-  const [formStart, setFormStart] = useState("09:00");
-  const [formEnd, setFormEnd] = useState("21:00");
+  const [formStart, setFormStart] = useState("00:00");
+  const [formEnd, setFormEnd] = useState("23:59");
+  const [showPolicyEditor, setShowPolicyEditor] = useState(false);
 
-  // Audit filter state
+  // Audit Filter State
   const [auditFilter, setAuditFilter] = useState("ALL");
 
   // Real-time Clock State
@@ -107,6 +126,11 @@ function App() {
   const [intentResult, setIntentResult] = useState(null);
 
   const wsRef = useRef(null);
+
+  const showToast = (message, type = "success") => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 3500);
+  };
 
   const handleSendIntent = async (textToSubmit) => {
     const queryText = textToSubmit || intentInput;
@@ -154,11 +178,6 @@ function App() {
     handleSendIntent(text);
   };
 
-  const showToast = (message, type = "success") => {
-    setToast({ message, type });
-    setTimeout(() => setToast(null), 3500);
-  };
-
   // Fetch initial data
   const fetchData = async () => {
     try {
@@ -178,8 +197,8 @@ function App() {
           setFormBudget(agentData.policy.daily_budget / 100);
           setFormAllowed(agentData.policy.allowed_categories.join(", "));
           setFormBlocked(agentData.policy.blocked_categories.join(", "));
-          setFormStart(agentData.policy.active_window_start || "09:00");
-          setFormEnd(agentData.policy.active_window_end || "21:00");
+          setFormStart(agentData.policy.active_window_start || "00:00");
+          setFormEnd(agentData.policy.active_window_end || "23:59");
         }
       }
 
@@ -193,7 +212,7 @@ function App() {
         setAuditEvents(auditData);
       }
     } catch (err) {
-      console.error("Failed to fetch initial data:", err);
+      console.error("Failed to fetch data:", err);
       showToast("Unable to connect to CircuitBreaker backend", "error");
     } finally {
       setLoading(false);
@@ -305,8 +324,8 @@ function App() {
         setFormBudget(updatedPol.daily_budget / 100);
         setFormAllowed(updatedPol.allowed_categories.join(", "));
         setFormBlocked(updatedPol.blocked_categories.join(", "));
-        setFormStart(updatedPol.active_window_start || "09:00");
-        setFormEnd(updatedPol.active_window_end || "21:00");
+        setFormStart(updatedPol.active_window_start || "00:00");
+        setFormEnd(updatedPol.active_window_end || "23:59");
         showToast("Policy reset to default rules!");
       } else {
         showToast("Failed to reset policy", "error");
@@ -343,6 +362,7 @@ function App() {
       if (res.ok) {
         const updatedPol = await res.json();
         setPolicy(updatedPol);
+        setShowPolicyEditor(false);
         showToast("Policy rules updated & enforced live!");
       } else {
         showToast("Failed to update policy rules", "error");
@@ -354,32 +374,33 @@ function App() {
     }
   };
 
-  // Helper to add category to string input
   const addCategoryPreset = (target, category) => {
     if (target === "allowed") {
       const current = formAllowed.split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
       if (!current.includes(category.toLowerCase())) {
-        const next = [...current, category.toLowerCase()].join(", ");
-        setFormAllowed(next);
+        setFormAllowed([...current, category.toLowerCase()].join(", "));
       }
     } else {
       const current = formBlocked.split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
       if (!current.includes(category.toLowerCase())) {
-        const next = [...current, category.toLowerCase()].join(", ");
-        setFormBlocked(next);
+        setFormBlocked([...current, category.toLowerCase()].join(", "));
       }
     }
   };
 
-  // Copy Order ID to clipboard
-  const copyToClipboard = (orderId) => {
-    navigator.clipboard.writeText(orderId);
-    setCopiedOrderId(orderId);
-    showToast(`Copied Order ID: ${orderId}`);
-    setTimeout(() => setCopiedOrderId(null), 2000);
+  const copyToClipboard = (text, type = "order") => {
+    navigator.clipboard.writeText(text);
+    if (type === "api") {
+      setCopiedApiKey(true);
+      showToast("Copied Agent API Key to clipboard");
+      setTimeout(() => setCopiedApiKey(false), 2000);
+    } else {
+      setCopiedOrderId(text);
+      showToast(`Copied Order ID: ${text}`);
+      setTimeout(() => setCopiedOrderId(null), 2000);
+    }
   };
 
-  // Trigger test transaction directly from UI
   const handleTestTx = async (amountPaise, category, merchant) => {
     try {
       const res = await fetch(`${API_BASE}/agents/${agentId}/transact`, {
@@ -395,18 +416,32 @@ function App() {
         );
       }
     } catch (err) {
-      showToast("Error triggering test transaction", "error");
+      showToast("Error executing test transaction", "error");
     }
   };
 
-  // Calculate daily spent total from allowed transactions today
+  // Calculate daily spend
   const todayIsoDate = new Date().toISOString().split('T')[0];
   const todaySpentPaise = transactions
     .filter((t) => t.decision === "ALLOWED" && t.timestamp && t.timestamp.startsWith(todayIsoDate))
     .reduce((sum, t) => sum + t.amount, 0);
 
   const isKilled = policy.status === "KILLED";
-  const budgetProgressPercent = Math.min(100, (todaySpentPaise / (policy.daily_budget || 1)) * 100);
+  const dailyBudgetPaise = policy.daily_budget || 1;
+  const budgetProgressPercent = Math.min(100, Math.round((todaySpentPaise / dailyBudgetPaise) * 100));
+
+  // Filtered transactions
+  const filteredTransactions = transactions.filter((tx) => {
+    if (!txSearch.trim()) return true;
+    const q = txSearch.toLowerCase();
+    return (
+      tx.category.toLowerCase().includes(q) ||
+      tx.merchant.toLowerCase().includes(q) ||
+      tx.reason.toLowerCase().includes(q) ||
+      tx.decision.toLowerCase().includes(q) ||
+      (tx.razorpay_order_id && tx.razorpay_order_id.toLowerCase().includes(q))
+    );
+  });
 
   // Filter audit events
   const filteredAuditEvents = auditEvents
@@ -427,840 +462,956 @@ function App() {
       );
     });
 
+  const navigationItems = [
+    { id: "CONTROL", label: "Overview", icon: LayoutDashboard },
+    { id: "AGENTS", label: "Agent Manager", icon: UserCheck },
+    { id: "TRANSACTIONS", label: "Live Transactions", icon: CreditCard, count: transactions.length },
+    { id: "AI INTENT", label: "AI Intent Copilot", icon: Sparkles },
+    { id: "POLICIES", label: "Policy Engine", icon: Sliders },
+    { id: "AUDIT", label: "Audit Log", icon: FileText, count: filteredAuditEvents.length }
+  ];
+
   return (
-    <div className="min-h-screen bg-[#090d16] text-[#e6edf3] font-sans antialiased flex flex-col selection:bg-[#2f81f7]/30 selection:text-white">
-      {/* Toast Notification Banner */}
+    <div className="min-h-screen bg-[#090B0D] text-[#E5E7E8] font-sans antialiased flex flex-col">
+      
+      {/* Toast Banner */}
       {toast && (
-        <div className="fixed top-4 right-4 z-50 animate-bounce">
+        <div className="fixed top-4 right-4 z-50 animate-in fade-in slide-in-from-top-2 duration-200">
           <div
-            className={`px-4 py-3 rounded-xl shadow-2xl border text-xs font-medium font-mono flex items-center gap-2 backdrop-blur-md ${
+            className={`px-4 py-2.5 rounded-md border text-xs font-mono flex items-center gap-2.5 bg-[#101417] shadow-xl ${
               toast.type === "error"
-                ? "bg-[#3c1e21]/90 text-[#f85149] border-[#f85149]/50"
-                : "bg-[#1b382b]/90 text-[#3fb950] border-[#2ea043]/50"
+                ? "border-[#E24B4B]/60 text-[#E24B4B]"
+                : "border-[#55C96B]/60 text-[#55C96B]"
             }`}
           >
-            {toast.type === "error" ? <XCircle className="w-4 h-4" /> : <CheckCircle2 className="w-4 h-4" />}
-            <span>{toast.message}</span>
+            {toast.type === "error" ? <XCircle className="w-4 h-4 shrink-0" /> : <CheckCircle2 className="w-4 h-4 shrink-0" />}
+            <span className="font-medium">{toast.message}</span>
           </div>
         </div>
       )}
 
-      {/* Main Navbar Header */}
-      <header className="border-b border-[#1f2638] bg-[#0d121f]/90 backdrop-blur-md sticky top-0 z-40">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4">
-          
-          <div className="flex items-center gap-3">
-            {/* Restored Original SVG Logo */}
-            <img src="/logo.svg" alt="CircuitBreaker Logo" className="w-10 h-10 rounded-lg shadow-sm" />
-            <div>
-              <div className="flex items-center gap-2">
-                <h1 className="text-base sm:text-lg font-bold tracking-tight text-white font-mono bg-clip-text text-transparent bg-gradient-to-r from-white via-slate-100 to-slate-400">
-                  circuit breaker
-                </h1>
-                <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-[#161f33] text-[#38bdf8] border border-[#2f81f7]/30 font-semibold tracking-wide">
-                  Razorpay Gate
-                </span>
-              </div>
-              <p className="text-[11px] text-[#8b949e] hidden sm:block">
-                AI Agent Payment Governance & Spend Control Center
-              </p>
+      {/* TOP HEADER NAVBAR WITH CHATGPT-STYLE SIDEBAR TOGGLE & LOGO */}
+      <header className="border-b border-[#252C30] bg-[#101417] h-14 shrink-0 px-4 flex items-center justify-between z-30">
+        <div className="flex items-center gap-3">
+          {/* Logo & Brand Title as the primary Sidebar Toggle (ChatGPT Style) */}
+          <button
+            onClick={() => setSidebarOpen(!sidebarOpen)}
+            className="flex items-center gap-2.5 px-2 py-1.5 -ml-2 rounded-md hover:bg-[#14191C] text-left transition-all cursor-pointer group border border-transparent hover:border-[#252C30]"
+            title={sidebarOpen ? "Click logo to collapse sidebar" : "Click logo to expand sidebar"}
+          >
+            <img src="/logo.svg" alt="CircuitBreaker Logo" className="w-6 h-6 rounded-md group-hover:scale-105 transition-transform" />
+            <div className="flex items-center gap-2">
+              <span className="font-semibold text-white tracking-tight text-sm font-sans group-hover:text-[#4FA3D1] transition-colors">
+                CircuitBreaker
+              </span>
+              <PanelLeft className={`w-3.5 h-3.5 text-[#7D878D] group-hover:text-white transition-all ${sidebarOpen ? "" : "rotate-180"}`} />
             </div>
+          </button>
+
+          <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-[#14191C] text-[#4FA3D1] border border-[#252C30] font-medium hidden sm:inline">
+            Razorpay Gate
+          </span>
+        </div>
+
+
+        <div className="flex items-center gap-4 text-xs">
+          {/* WebSocket Status */}
+          <div className="flex items-center gap-2 font-mono text-[11px]">
+            <span
+              className={`w-2 h-2 rounded-full ${
+                wsStatus === "CONNECTED"
+                  ? "bg-[#55C96B]"
+                  : wsStatus === "CONNECTING"
+                  ? "bg-[#D6A94A] animate-pulse"
+                  : "bg-[#E24B4B]"
+              }`}
+            />
+            <span className={wsStatus === "CONNECTED" ? "text-[#55C96B] font-semibold" : "text-[#7D878D]"}>
+              {wsStatus === "CONNECTED" ? "LIVE SYNC ACTIVE" : wsStatus}
+            </span>
           </div>
 
-          <div className="flex items-center gap-3">
-            {/* Realtime Live Clock */}
-            <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#131927] border border-[#232d42] text-xs font-mono">
-              <Clock className="w-3.5 h-3.5 text-[#38bdf8]" />
-              <span className="text-white font-bold tracking-wider">
-                {currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-              </span>
-            </div>
-
-            {/* Realtime WebSocket Status */}
-            <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#131927] border border-[#232d42] text-xs font-mono">
-              <span
-                className={`w-2 h-2 rounded-full ${
-                  wsStatus === "CONNECTED"
-                    ? "bg-[#3fb950] shadow-[0_0_8px_#3fb950]"
-                    : wsStatus === "CONNECTING"
-                    ? "bg-[#d29922] animate-pulse"
-                    : "bg-[#f85149]"
-                }`}
-              />
-              <span className="text-[#8b949e] text-[11px] font-semibold">
-                {wsStatus === "CONNECTED" ? "LIVE SYNC ACTIVE" : wsStatus}
-              </span>
-            </div>
-
-            <button
-              onClick={fetchData}
-              disabled={loading}
-              className="p-2 rounded-xl bg-[#161f33] hover:bg-[#202c48] text-[#e6edf3] transition-all border border-[#232d42] text-xs font-medium flex items-center gap-1.5 cursor-pointer hover:border-[#38bdf8]/50"
-              title="Sync latest data"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin text-[#38bdf8]" : ""}`} />
-              <span className="hidden md:inline font-mono text-xs">Sync</span>
-            </button>
+          {/* Real-time Clock */}
+          <div className="hidden sm:flex items-center gap-1.5 text-[#E5E7E8] font-mono font-medium border-l border-r border-[#252C30] px-3 py-1 text-[11px]">
+            <Clock className="w-3.5 h-3.5 text-[#4FA3D1]" />
+            <span>{currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })}</span>
           </div>
 
+          {/* Sync Button */}
+          <button
+            onClick={fetchData}
+            disabled={loading}
+            className="px-3 py-1 bg-[#14191C] hover:bg-[#252C30] border border-[#252C30] rounded-md text-[#E5E7E8] flex items-center gap-1.5 cursor-pointer text-xs font-mono transition-colors"
+            title="Sync latest data"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin text-[#4FA3D1]" : "text-[#7D878D]"}`} />
+            <span className="hidden sm:inline">Sync</span>
+          </button>
         </div>
       </header>
 
-      {/* Main Content Area */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+      {/* OPERATOR WORKSPACE WITH CHATGPT-STYLE SIDEBAR */}
+      <div className="flex-1 flex overflow-hidden">
 
-        {/* HERO EXECUTIVE SUMMARY CARD */}
-        <div
-          className={`rounded-2xl p-5 sm:p-6 space-y-5 border shadow-xl transition-all ${
-            isKilled
-              ? "bg-gradient-to-b from-[#3c1e21] to-[#1e0f11] border-[#f85149]/60 shadow-rose-950/30"
-              : "bg-gradient-to-b from-[#131927] to-[#0d121f] border-[#1f2638] shadow-slate-950/40"
+        {/* CHATGPT-STYLE SIDEBAR (TOGGLEABLE & FULLY WORKING NAV) */}
+        <aside
+          className={`bg-[#101417] border-r border-[#252C30] shrink-0 transition-all duration-200 flex flex-col justify-between overflow-y-auto ${
+            sidebarOpen ? "w-60 p-4" : "w-14 py-4 px-2 items-center"
           }`}
         >
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-[#232d42] pb-5">
+          <div className="space-y-6 w-full">
             
+            {/* Sidebar Navigation Menu */}
             <div className="space-y-2">
-              <div className="flex flex-wrap items-center gap-2">
-                <Shield className="w-5 h-5 text-[#38bdf8]" />
-                <span className="text-base font-bold text-white font-mono tracking-wide">
-                  Agent #{agentId}: {agent?.name || "ShoppingBot"}
-                </span>
-                <span className="text-xs font-mono px-2.5 py-0.5 rounded-md bg-[#090d16] text-[#8b949e] border border-[#232d42]">
-                  Key: {agent?.api_key || "sb_key_..."}
-                </span>
-              </div>
-              
-              <div className="flex items-center gap-2">
-                {isKilled ? (
-                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold font-mono bg-rose-500/10 text-[#f85149] border border-[#f85149]/40">
-                    <ShieldAlert className="w-4 h-4" /> KILLED — ALL AGENT PAYMENTS BLOCKED
-                  </span>
-                ) : (
-                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold font-mono bg-emerald-500/10 text-[#3fb950] border border-[#2ea043]/40">
-                    <ShieldCheck className="w-4 h-4" /> AUTHORIZED — GOVERNANCE ACTIVE & PROTECTED
-                  </span>
-                )}
-              </div>
-            </div>
-
-            {/* Prominent Emergency Kill Switch Toggle */}
-            <div className="flex items-center gap-3">
-              <button
-                onClick={handleKillToggle}
-                className={`w-full md:w-auto px-6 py-3 rounded-xl text-xs font-bold uppercase font-mono tracking-wider flex items-center justify-center gap-2.5 transition-all cursor-pointer shadow-lg active:scale-95 ${
-                  isKilled
-                    ? "bg-gradient-to-r from-[#2ea043] to-[#3fb950] hover:from-[#3fb950] hover:to-[#2ea043] text-white border border-[#3fb950] shadow-emerald-950/50"
-                    : "bg-gradient-to-r from-[#da3633] to-[#f85149] hover:from-[#f85149] hover:to-[#da3633] text-white border border-[#f85149] shadow-rose-950/50"
-                }`}
-              >
-                <Power className="w-4 h-4 stroke-[2.5]" />
-                <span>{isKilled ? "Restore Payment Authority" : "Revoke Payment Authority (Kill Switch)"}</span>
-              </button>
-            </div>
-
-          </div>
-
-          {/* 4 Stat Metric Cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            
-            {/* Daily Spend Tracker */}
-            <div className="p-4 rounded-xl bg-[#090d16]/70 border border-[#232d42] space-y-2 hover:border-[#2f81f7]/40 transition-colors">
-              <div className="flex items-center justify-between text-xs text-[#8b949e] font-medium">
-                <div className="flex items-center gap-2">
-                  <Wallet className="w-4 h-4 text-[#38bdf8]" />
-                  <span className="font-semibold text-slate-300">Daily Spend Tracker</span>
+              {sidebarOpen && (
+                <div className="font-mono text-[11px] font-semibold text-[#7D878D] uppercase tracking-wider px-2 pb-1 border-b border-[#252C30]">
+                  NAVIGATION
                 </div>
-                <span className="font-mono text-xs text-[#38bdf8] font-bold">{budgetProgressPercent.toFixed(0)}%</span>
-              </div>
-              <div className="text-xl font-bold font-mono text-white">
-                {formatRupees(todaySpentPaise)} <span className="text-xs text-[#8b949e] font-sans font-normal">/ {formatRupees(policy.daily_budget)}</span>
-              </div>
-              <div className="w-full bg-[#182030] h-2 rounded-full overflow-hidden border border-[#232d42]">
-                <div
-                  className={`h-full transition-all duration-500 rounded-full ${
-                    budgetProgressPercent >= 90
-                      ? "bg-[#f85149]"
-                      : budgetProgressPercent >= 70
-                      ? "bg-[#d29922]"
-                      : "bg-[#2f81f7]"
-                  }`}
-                  style={{ width: `${budgetProgressPercent}%` }}
-                />
-              </div>
-            </div>
+              )}
 
-            {/* Per-Transaction Cap */}
-            <div className="p-4 rounded-xl bg-[#090d16]/70 border border-[#232d42] space-y-2 hover:border-[#2f81f7]/40 transition-colors">
-              <div className="flex items-center gap-2 text-xs text-[#8b949e] font-medium">
-                <CreditCard className="w-4 h-4 text-[#2f81f7]" />
-                <span className="font-semibold text-slate-300">Single Purchase Cap</span>
-              </div>
-              <div className="text-xl font-bold font-mono text-white">
-                {formatRupees(policy.per_transaction_limit)}
-              </div>
-              <span className="text-[11px] text-[#8b949e] block">Maximum limit per single order</span>
-            </div>
-
-            {/* Active Time Window */}
-            <div className="p-4 rounded-xl bg-[#090d16]/70 border border-[#232d42] space-y-2 hover:border-[#3fb950]/40 transition-colors">
-              <div className="flex items-center justify-between text-xs text-[#8b949e] font-medium">
-                <div className="flex items-center gap-2">
-                  <Clock className="w-4 h-4 text-[#3fb950]" />
-                  <span className="font-semibold text-slate-300">Active Window</span>
-                </div>
-                <span className="font-mono text-[10px] text-[#38bdf8] font-bold">
-                  NOW {currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                </span>
-              </div>
-              <div className="text-xl font-bold font-mono text-[#3fb950]">
-                {policy.active_window_start || "00:00"} – {policy.active_window_end || "23:59"}
-              </div>
-              <span className="text-[11px] text-[#8b949e] block">Real-time allowed payment hours</span>
-            </div>
-
-            {/* Total Evaluated Attempts */}
-            <div className="p-4 rounded-xl bg-[#090d16]/70 border border-[#232d42] space-y-2 hover:border-[#d29922]/40 transition-colors">
-              <div className="flex items-center gap-2 text-xs text-[#8b949e] font-medium">
-                <Activity className="w-4 h-4 text-[#d29922]" />
-                <span className="font-semibold text-slate-300">Evaluated Attempts</span>
-              </div>
-              <div className="text-xl font-bold font-mono text-white">
-                {transactions.length} <span className="text-xs text-[#8b949e] font-sans font-normal">Orders</span>
-              </div>
-              <span className="text-[11px] text-[#8b949e] block">Total processed policy evaluations</span>
-            </div>
-
-          </div>
-        </div>
-
-        {/* INTUITIVE TABBED NAVIGATION BAR (No emojis, clean vector icons) */}
-        <div className="flex flex-wrap items-center gap-2 border-b border-[#1f2638] pb-3">
-          <button
-            onClick={() => setActiveTab("copilot")}
-            className={`px-4 py-2.5 rounded-xl font-mono text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
-              activeTab === "copilot"
-                ? "bg-[#2f81f7] text-white shadow-lg shadow-[#2f81f7]/25 border border-[#38bdf8]/40"
-                : "bg-[#131927] text-[#8b949e] hover:text-white hover:bg-[#161f33] border border-[#232d42]"
-            }`}
-          >
-            <Bot className="w-4 h-4 text-[#38bdf8]" />
-            <span>AI Copilot & Intent Parser</span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab("rules")}
-            className={`px-4 py-2.5 rounded-xl font-mono text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
-              activeTab === "rules"
-                ? "bg-[#2f81f7] text-white shadow-lg shadow-[#2f81f7]/25 border border-[#38bdf8]/40"
-                : "bg-[#131927] text-[#8b949e] hover:text-white hover:bg-[#161f33] border border-[#232d42]"
-            }`}
-          >
-            <Sliders className="w-4 h-4 text-[#38bdf8]" />
-            <span>Policy Rules & Caps</span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab("transactions")}
-            className={`px-4 py-2.5 rounded-xl font-mono text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
-              activeTab === "transactions"
-                ? "bg-[#2f81f7] text-white shadow-lg shadow-[#2f81f7]/25 border border-[#38bdf8]/40"
-                : "bg-[#131927] text-[#8b949e] hover:text-white hover:bg-[#161f33] border border-[#232d42]"
-            }`}
-          >
-            <Activity className="w-4 h-4 text-[#38bdf8]" />
-            <span>Live Activity Feed ({transactions.length})</span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab("audit")}
-            className={`px-4 py-2.5 rounded-xl font-mono text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
-              activeTab === "audit"
-                ? "bg-[#2f81f7] text-white shadow-lg shadow-[#2f81f7]/25 border border-[#38bdf8]/40"
-                : "bg-[#131927] text-[#8b949e] hover:text-white hover:bg-[#161f33] border border-[#232d42]"
-            }`}
-          >
-            <FileText className="w-4 h-4 text-[#38bdf8]" />
-            <span>Audit Log ({filteredAuditEvents.length})</span>
-          </button>
-        </div>
-
-        {/* TAB 1: AI COPILOT & INTENT PARSER */}
-        {activeTab === "copilot" && (
-          <div className="bg-[#131927] border border-[#1f2638] rounded-2xl p-6 space-y-6 shadow-xl">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#232d42] pb-4">
-              <div className="space-y-1">
-                <h2 className="text-sm font-bold text-white font-mono uppercase tracking-wider flex items-center gap-2">
-                  <Sparkles className="w-4 h-4 text-[#38bdf8]" /> AI Transaction Intent Copilot
-                </h2>
-                <p className="text-xs text-[#8b949e]">
-                  Enter plain language payment requests (e.g., "Buy groceries for ₹800"). The AI parses the request and CircuitBreaker enforces payment rules before calling Razorpay.
-                </p>
-              </div>
-            </div>
-
-            {/* Input Form */}
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                handleSendIntent(intentInput);
-              }}
-              className="space-y-4"
-            >
-              <div className="flex flex-col sm:flex-row gap-3">
-                <input
-                  type="text"
-                  value={intentInput}
-                  onChange={(e) => setIntentInput(e.target.value)}
-                  placeholder="e.g. Buy groceries from my usual store for around ₹1500"
-                  className="flex-1 bg-[#090d16] border border-[#232d42] rounded-xl px-4 py-3 text-xs font-mono text-white focus:border-[#38bdf8] focus:outline-none placeholder-[#484f58] shadow-inner"
-                  required
-                />
-                <button
-                  type="submit"
-                  disabled={intentLoading}
-                  className="px-6 py-3 rounded-xl bg-gradient-to-r from-[#1f6feb] to-[#2f81f7] hover:from-[#2f81f7] hover:to-[#388bfd] text-white font-mono text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 transition-all cursor-pointer shrink-0 disabled:opacity-50 shadow-md"
-                >
-                  {intentLoading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-                  <span>Parse & Evaluate</span>
-                </button>
-              </div>
-
-              {/* Demo Scenario Chips */}
-              <div className="space-y-2 pt-1">
-                <span className="text-xs font-mono text-[#8b949e] font-semibold">Click a Demo Scenario to Test:</span>
-                <div className="flex flex-wrap items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => handlePresetIntent("Buy groceries for ₹800")}
-                    className="px-3 py-1.5 rounded-lg bg-[#090d16] hover:bg-[#161f33] text-xs font-mono text-[#3fb950] border border-[#2ea043]/40 transition-all flex items-center gap-1.5 cursor-pointer shadow-sm"
-                  >
-                    <CheckCircle2 className="w-3.5 h-3.5 text-[#3fb950]" /> ₹800 Groceries (Allowed Scenario)
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => handlePresetIntent("Buy groceries for ₹5000")}
-                    className="px-3 py-1.5 rounded-lg bg-[#090d16] hover:bg-[#161f33] text-xs font-mono text-[#f85149] border border-[#f85149]/40 transition-all flex items-center gap-1.5 cursor-pointer shadow-sm"
-                  >
-                    <XCircle className="w-3.5 h-3.5 text-[#f85149]" /> ₹5,000 Groceries (Over Limit Scenario)
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => handlePresetIntent("Buy something from a gambling website for ₹500")}
-                    className="px-3 py-1.5 rounded-lg bg-[#090d16] hover:bg-[#161f33] text-xs font-mono text-[#d29922] border border-[#d29922]/40 transition-all flex items-center gap-1.5 cursor-pointer shadow-sm"
-                  >
-                    <XCircle className="w-3.5 h-3.5 text-[#d29922]" /> ₹500 Gambling (Blocked Category Scenario)
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => handlePresetIntent("Buy headphones for ₹1200")}
-                    className="px-3 py-1.5 rounded-lg bg-[#090d16] hover:bg-[#161f33] text-xs font-mono text-[#a5d6ff] border border-[#232d42] transition-all flex items-center gap-1.5 cursor-pointer shadow-sm"
-                  >
-                    <Zap className="w-3.5 h-3.5 text-[#38bdf8]" /> ₹1,200 Headphones (Kill Switch Test)
-                  </button>
-                </div>
-              </div>
-            </form>
-
-            {/* Results Display */}
-            {intentResult && (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
-                {/* AI Interpretation */}
-                <div className="p-5 rounded-xl bg-[#090d16] border border-[#232d42] space-y-3 font-mono text-xs shadow-md">
-                  <div className="flex items-center justify-between border-b border-[#232d42] pb-2">
-                    <span className="font-bold text-[#38bdf8] flex items-center gap-1.5 uppercase">
-                      <Bot className="w-4 h-4" /> AI Interpretation
-                    </span>
-                    <span className="text-[10px] text-[#8b949e]">Extracted Intent</span>
-                  </div>
-
-                  {intentResult.intent ? (
-                    <div className="space-y-2.5">
-                      <div className="flex justify-between py-1 border-b border-[#161f33]">
-                        <span className="text-[#8b949e]">Extracted Amount:</span>
-                        <span className="font-bold text-white">
-                          {intentResult.intent.amount ? formatRupees(intentResult.intent.amount * 100) : "-"}
-                        </span>
-                      </div>
-                      <div className="flex justify-between py-1 border-b border-[#161f33]">
-                        <span className="text-[#8b949e]">Category:</span>
-                        <span className="text-[#a5d6ff] capitalize font-semibold">{intentResult.intent.category || "-"}</span>
-                      </div>
-                      <div className="flex justify-between py-1 border-b border-[#161f33]">
-                        <span className="text-[#8b949e]">Merchant:</span>
-                        <span className="text-slate-300">{intentResult.intent.merchant || "Standard Vendor"}</span>
-                      </div>
-                      <div className="flex justify-between py-1">
-                        <span className="text-[#8b949e]">Reason:</span>
-                        <span className="text-slate-300 text-right max-w-[200px] truncate">{intentResult.intent.reason || "-"}</span>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="py-4 text-[#f85149] text-center font-mono flex items-center justify-center gap-2">
-                      <AlertTriangle className="w-4 h-4" /> {intentResult.error || "Unable to understand transaction intent"}
-                    </div>
-                  )}
-                </div>
-
-                {/* CircuitBreaker Decision */}
-                <div className={`p-5 rounded-xl bg-[#090d16] border space-y-3 font-mono text-xs shadow-md ${
-                  intentResult.decision?.status === "ALLOWED" ? "border-[#2ea043]/80 shadow-emerald-950/20" : "border-[#f85149]/80 shadow-rose-950/20"
-                }`}>
-                  <div className="flex items-center justify-between border-b border-[#232d42] pb-2">
-                    <span className="font-bold text-[#3fb950] flex items-center gap-1.5 uppercase">
-                      <ShieldCheck className="w-4 h-4 text-[#2f81f7]" /> CircuitBreaker Gate Decision
-                    </span>
-                    <span className="text-[10px] text-[#8b949e]">Governance Check</span>
-                  </div>
-
-                  {intentResult.decision ? (
-                    <div className="space-y-3">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[#8b949e]">Status:</span>
-                        <span className={`px-3 py-1 rounded-lg text-xs font-bold uppercase ${
-                          intentResult.decision.status === "ALLOWED"
-                            ? "bg-[#1b382b] text-[#3fb950] border border-[#2ea043]"
-                            : "bg-[#3c1e21] text-[#f85149] border border-[#f85149]"
-                        }`}>
-                          {intentResult.decision.status}
-                        </span>
-                      </div>
-
-                      <div>
-                        <span className="text-[#8b949e] block mb-1">Reason:</span>
-                        <p className="text-slate-200 bg-[#131927] p-2.5 rounded-lg border border-[#232d42] leading-relaxed">
-                          {intentResult.decision.reason}
-                        </p>
-                      </div>
-
-                      {intentResult.razorpay_order_id && (
-                        <div className="pt-2 border-t border-[#232d42] flex items-center justify-between">
-                          <span className="text-[#8b949e]">Razorpay Order:</span>
-                          <button
-                            type="button"
-                            onClick={() => copyToClipboard(intentResult.razorpay_order_id)}
-                            className="bg-[#131927] hover:bg-[#202c48] px-3 py-1 rounded-lg border border-[#232d42] text-[#38bdf8] font-bold flex items-center gap-1.5 cursor-pointer"
-                          >
-                            <span>{intentResult.razorpay_order_id}</span>
-                            <Copy className="w-3.5 h-3.5 text-[#8b949e]" />
-                          </button>
+              <nav className="space-y-1">
+                {navigationItems.map((item) => {
+                  const Icon = item.icon;
+                  const isSelected = navSection === item.id;
+                  return (
+                    <button
+                      key={item.id}
+                      onClick={() => setNavSection(item.id)}
+                      className={`w-full text-left rounded-md flex items-center gap-3 cursor-pointer transition-all ${
+                        sidebarOpen ? "px-3 py-2 text-xs" : "p-2.5 justify-center"
+                      } ${
+                        isSelected
+                          ? "bg-[#14191C] text-white border-l-2 border-[#55C96B] font-semibold"
+                          : "text-[#7D878D] hover:text-[#E5E7E8] hover:bg-[#14191C]/50"
+                      }`}
+                      title={!sidebarOpen ? item.label : undefined}
+                    >
+                      <Icon className={`w-4 h-4 shrink-0 ${isSelected ? "text-[#55C96B]" : "text-[#7D878D]"}`} />
+                      {sidebarOpen && (
+                        <div className="flex-1 flex items-center justify-between font-sans">
+                          <span>{item.label}</span>
+                          {item.count !== undefined && (
+                            <span className="font-mono text-[10px] px-1.5 py-0.2 rounded bg-[#090B0D] text-[#7D878D] border border-[#252C30]">
+                              {item.count}
+                            </span>
+                          )}
                         </div>
                       )}
-                    </div>
+                    </button>
+                  );
+                })}
+              </nav>
+            </div>
+
+            {/* Sidebar Active Agent Info Box (Visible when open) */}
+            {sidebarOpen && (
+              <div className="bg-[#090B0D] border border-[#252C30] p-3 rounded-md space-y-2 font-mono text-xs">
+                <div className="text-[#7D878D] text-[10px] uppercase font-semibold">ACTIVE AGENT</div>
+                <div className="text-white font-bold truncate">{agent?.name || "ShoppingBot"}</div>
+                <div className="text-[#7D878D] text-[11px] truncate">ID: {agent?.api_key || "sb_key_123"}</div>
+                <div className="pt-1">
+                  {isKilled ? (
+                    <span className="inline-flex items-center gap-1 text-[11px] font-bold text-[#E24B4B]">
+                      ● REVOKED
+                    </span>
                   ) : (
-                    <div className="py-4 text-[#8b949e] text-center font-mono">
-                      No payment attempted (uncertain AI intent).
-                    </div>
+                    <span className="inline-flex items-center gap-1 text-[11px] font-bold text-[#55C96B]">
+                      ● AUTHORIZED
+                    </span>
                   )}
                 </div>
               </div>
             )}
 
-            {/* Quick Direct Payment Test Bar */}
-            <div className="pt-4 border-t border-[#232d42] space-y-3">
-              <span className="text-xs font-mono text-[#8b949e] font-semibold">1-Click Direct API Payment Tests:</span>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <button
-                  onClick={() => handleTestTx(80000, "groceries", "FreshMart")}
-                  className="px-3 py-2.5 rounded-xl bg-[#090d16] hover:bg-[#161f33] text-xs font-mono font-medium text-[#3fb950] border border-[#2ea043]/40 transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-sm hover:border-[#3fb950]"
-                >
-                  <CheckCircle2 className="w-3.5 h-3.5" /> ₹800 Groceries (Test Pass)
-                </button>
-
-                <button
-                  onClick={() => handleTestTx(500000, "groceries", "Amazon")}
-                  className="px-3 py-2.5 rounded-xl bg-[#090d16] hover:bg-[#161f33] text-xs font-mono font-medium text-[#f85149] border border-[#f85149]/40 transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-sm hover:border-[#f85149]"
-                >
-                  <XCircle className="w-3.5 h-3.5" /> ₹5,000 Over-Limit (Test Block)
-                </button>
-
-                <button
-                  onClick={() => handleTestTx(70000, "gambling", "Casino")}
-                  className="px-3 py-2.5 rounded-xl bg-[#090d16] hover:bg-[#161f33] text-xs font-mono font-medium text-[#d29922] border border-[#d29922]/40 transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-sm hover:border-[#d29922]"
-                >
-                  <XCircle className="w-3.5 h-3.5" /> ₹700 Gambling (Test Block)
-                </button>
-              </div>
-            </div>
           </div>
-        )}
 
-        {/* TAB 2: POLICY RULES & SPENDING CAPS */}
-        {activeTab === "rules" && (
-          <div className="bg-[#131927] border border-[#1f2638] rounded-2xl p-6 space-y-6 shadow-xl">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#232d42] pb-4">
-              <div className="space-y-1">
-                <h2 className="text-sm font-bold text-white font-mono uppercase tracking-wider flex items-center gap-2">
-                  <Sliders className="w-4 h-4 text-[#2f81f7]" /> Policy Enforcement & Spending Rules
-                </h2>
-                <p className="text-xs text-[#8b949e]">
-                  Configure spending limits, budget caps, permitted categories, and time windows enforced live by CircuitBreaker.
-                </p>
-              </div>
-
+          {/* Sidebar Footer Collapse Toggle */}
+          {sidebarOpen && (
+            <div className="pt-4 border-t border-[#252C30] text-center w-full">
               <button
-                type="button"
-                onClick={handleResetPolicy}
-                className="px-3 py-1.5 rounded-xl bg-[#090d16] hover:bg-[#161f33] text-xs font-mono text-[#38bdf8] border border-[#232d42] transition-colors flex items-center gap-1.5 cursor-pointer shrink-0"
+                onClick={() => setSidebarOpen(false)}
+                className="text-[11px] font-mono text-[#7D878D] hover:text-white transition-colors cursor-pointer"
               >
-                <RotateCcw className="w-3.5 h-3.5" />
-                Reset Defaults
+                [ Collapse Sidebar ]
               </button>
             </div>
+          )}
+        </aside>
 
-            <form onSubmit={handleSavePolicy} className="space-y-6">
+        {/* MAIN WORKSPACE CONTENT AREA */}
+        <main className="flex-1 bg-[#090B0D] overflow-y-auto p-4 md:p-6 space-y-6">
+
+          {/* PAGE VIEW 1: OVERVIEW (DEFAULT CONTROL DASHBOARD) */}
+          {navSection === "CONTROL" && (
+            <div className="space-y-6">
               
-              {/* Financial Caps */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 p-5 rounded-xl bg-[#090d16] border border-[#232d42]">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-200 mb-1.5 font-mono flex items-center gap-1">
-                    Single Purchase Limit (₹)
-                  </label>
-                  <p className="text-[11px] text-[#8b949e] mb-2">Maximum rupees allowed for any single order</p>
-                  <div className="relative">
-                    <span className="absolute left-3.5 top-2.5 text-[#8b949e] font-mono text-sm">₹</span>
-                    <input
-                      type="number"
-                      min="1"
-                      value={formLimit}
-                      onChange={(e) => setFormLimit(e.target.value)}
-                      className="w-full bg-[#131927] border border-[#232d42] rounded-xl pl-8 pr-4 py-2 text-sm font-mono text-white focus:border-[#2f81f7] focus:outline-none"
-                      required
-                    />
+              {/* 4 TOP METRIC CARDS GRID */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                
+                {/* Daily Spend Tracker */}
+                <div className="bg-[#101417] border border-[#252C30] p-4 rounded-lg space-y-2">
+                  <div className="flex items-center justify-between text-xs text-[#7D878D]">
+                    <span className="font-medium">Daily Spend Tracker</span>
+                    <span className="font-mono font-semibold text-[#55C96B]">{budgetProgressPercent}%</span>
                   </div>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-200 mb-1.5 font-mono flex items-center gap-1">
-                    Daily Spend Budget (₹)
-                  </label>
-                  <p className="text-[11px] text-[#8b949e] mb-2">Maximum cumulative spend allowed per calendar day</p>
-                  <div className="relative">
-                    <span className="absolute left-3.5 top-2.5 text-[#8b949e] font-mono text-sm">₹</span>
-                    <input
-                      type="number"
-                      min="1"
-                      value={formBudget}
-                      onChange={(e) => setFormBudget(e.target.value)}
-                      className="w-full bg-[#131927] border border-[#232d42] rounded-xl pl-8 pr-4 py-2 text-sm font-mono text-white focus:border-[#2f81f7] focus:outline-none"
-                      required
-                    />
+                  <div className="text-xl font-bold font-mono text-white">
+                    {formatRupees(todaySpentPaise)} <span className="text-xs text-[#7D878D] font-normal">/ {formatRupees(policy.daily_budget)}</span>
                   </div>
-                </div>
-              </div>
-
-              {/* Category Rules */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 p-5 rounded-xl bg-[#090d16] border border-[#232d42]">
-                {/* Allowed Categories */}
-                <div className="space-y-3">
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-200 mb-1 font-mono">Allowed Categories</label>
-                    <p className="text-[11px] text-[#8b949e] mb-2">Comma-separated list of permitted purchase types</p>
-                    <input
-                      type="text"
-                      value={formAllowed}
-                      onChange={(e) => setFormAllowed(e.target.value)}
-                      placeholder="groceries, subscriptions, travel"
-                      className="w-full bg-[#131927] border border-[#232d42] rounded-xl px-3.5 py-2 text-xs font-mono text-white focus:border-[#2ea043] focus:outline-none"
-                    />
-                  </div>
-                  
-                  <div className="space-y-2">
-                    <div className="flex flex-wrap gap-1.5">
-                      {formAllowed.split(",").map((cat, i) => cat.trim() && (
-                        <span key={i} className="px-2.5 py-1 rounded-lg bg-[#1b382b] text-[#3fb950] border border-[#2ea043]/50 text-xs font-mono flex items-center gap-1">
-                          <Check className="w-3.5 h-3.5" /> {cat.trim()}
-                        </span>
-                      ))}
-                    </div>
-                    <div className="flex items-center gap-1.5 text-[11px] text-[#8b949e]">
-                      <span>Add Quick Preset:</span>
-                      {["travel", "cloud", "supplies"].map((preset) => (
-                        <button
-                          key={preset}
-                          type="button"
-                          onClick={() => addCategoryPreset("allowed", preset)}
-                          className="px-2 py-0.5 rounded-md bg-[#131927] hover:bg-[#202c48] text-[#38bdf8] border border-[#232d42] text-xs font-mono flex items-center gap-0.5 cursor-pointer"
-                        >
-                          + {preset}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Blocked Categories */}
-                <div className="space-y-3">
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-200 mb-1 font-mono">Blocked Categories</label>
-                    <p className="text-[11px] text-[#8b949e] mb-2">Comma-separated list of strictly forbidden categories</p>
-                    <input
-                      type="text"
-                      value={formBlocked}
-                      onChange={(e) => setFormBlocked(e.target.value)}
-                      placeholder="gambling, crypto, luxury"
-                      className="w-full bg-[#131927] border border-[#232d42] rounded-xl px-3.5 py-2 text-xs font-mono text-white focus:border-[#f85149] focus:outline-none"
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <div className="flex flex-wrap gap-1.5">
-                      {formBlocked.split(",").map((cat, i) => cat.trim() && (
-                        <span key={i} className="px-2.5 py-1 rounded-lg bg-[#3c1e21] text-[#f85149] border border-[#f85149]/50 text-xs font-mono flex items-center gap-1">
-                          <XCircle className="w-3.5 h-3.5" /> {cat.trim()}
-                        </span>
-                      ))}
-                    </div>
-                    <div className="flex items-center gap-1.5 text-[11px] text-[#8b949e]">
-                      <span>Add Quick Preset:</span>
-                      {["gaming", "luxury", "tickets"].map((preset) => (
-                        <button
-                          key={preset}
-                          type="button"
-                          onClick={() => addCategoryPreset("blocked", preset)}
-                          className="px-2 py-0.5 rounded-md bg-[#131927] hover:bg-[#202c48] text-[#f85149] border border-[#232d42] text-xs font-mono flex items-center gap-0.5 cursor-pointer"
-                        >
-                          + {preset}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Time Window */}
-              <div className="p-5 rounded-xl bg-[#090d16] border border-[#232d42] space-y-3">
-                <label className="block text-xs font-semibold text-slate-200 font-mono">Active Payment Window (24h Format)</label>
-                <p className="text-[11px] text-[#8b949e]">Transactions outside this daily window are automatically blocked by the gate.</p>
-                <div className="grid grid-cols-2 gap-4 max-w-md">
-                  <div>
-                    <label className="block text-[11px] text-[#8b949e] mb-1">Start Time</label>
-                    <input
-                      type="time"
-                      value={formStart}
-                      onChange={(e) => setFormStart(e.target.value)}
-                      className="w-full bg-[#131927] border border-[#232d42] rounded-xl px-3 py-2 text-xs font-mono text-white focus:border-[#38bdf8] focus:outline-none"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] text-[#8b949e] mb-1">End Time</label>
-                    <input
-                      type="time"
-                      value={formEnd}
-                      onChange={(e) => setFormEnd(e.target.value)}
-                      className="w-full bg-[#131927] border border-[#232d42] rounded-xl px-3 py-2 text-xs font-mono text-white focus:border-[#38bdf8] focus:outline-none"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Submit Button */}
-              <div className="flex justify-end pt-2">
-                <button
-                  type="submit"
-                  disabled={savingPolicy}
-                  className="px-8 py-3 rounded-xl bg-gradient-to-r from-[#1f6feb] to-[#2f81f7] hover:from-[#2f81f7] hover:to-[#388bfd] text-white font-mono text-xs font-bold uppercase tracking-wider flex items-center gap-2 transition-all cursor-pointer shadow-lg disabled:opacity-50"
-                >
-                  {savingPolicy ? <RefreshCw className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />}
-                  <span>Save & Enforce Rules</span>
-                </button>
-              </div>
-
-            </form>
-          </div>
-        )}
-
-        {/* TAB 3: LIVE PAYMENT ACTIVITY */}
-        {activeTab === "transactions" && (
-          <div className="bg-[#131927] border border-[#1f2638] rounded-2xl p-6 space-y-4 shadow-xl">
-            <div className="flex items-center justify-between border-b border-[#232d42] pb-4">
-              <div className="space-y-1">
-                <h2 className="text-sm font-bold text-white font-mono uppercase tracking-wider flex items-center gap-2">
-                  <Activity className="w-4 h-4 text-[#2f81f7]" /> Live Transaction Ticker Stream
-                </h2>
-                <p className="text-xs text-[#8b949e]">
-                  Real-time stream of evaluated transaction attempts received via WebSocket live sync.
-                </p>
-              </div>
-              <span className="text-xs text-[#8b949e] font-mono font-semibold">
-                {transactions.length} Total Events
-              </span>
-            </div>
-
-            <div className="space-y-3 max-h-[600px] overflow-y-auto pr-1">
-              {transactions.length === 0 ? (
-                <div className="py-16 flex flex-col items-center justify-center text-[#8b949e] space-y-3">
-                  <CreditCard className="w-10 h-10 stroke-1 text-[#8b949e]" />
-                  <p className="text-sm font-medium">No transactions evaluated yet.</p>
-                  <p className="text-xs text-[#8b949e] text-center max-w-md">
-                    Switch to the "AI Copilot" tab to test AI payment requests, or run the CLI simulator.
-                  </p>
-                </div>
-              ) : (
-                transactions.map((tx) => {
-                  const isAllowed = tx.decision === "ALLOWED";
-                  const timeStr = formatTimeString(tx.timestamp);
-
-                  return (
+                  <div className="w-full bg-[#14191C] border border-[#252C30] h-2 rounded-full overflow-hidden">
                     <div
-                      key={tx.id || `${tx.timestamp}-${Math.random()}`}
-                      className={`p-4 rounded-xl border text-xs bg-[#090d16] transition-all shadow-sm ${
-                        isAllowed
-                          ? "border-[#2ea043]/60 hover:border-[#2ea043]"
-                          : "border-[#f85149]/60 hover:border-[#f85149]"
+                      className={`h-full transition-all duration-300 rounded-full ${
+                        budgetProgressPercent >= 90
+                          ? "bg-[#E24B4B]"
+                          : budgetProgressPercent >= 70
+                          ? "bg-[#D6A94A]"
+                          : "bg-[#55C96B]"
+                      }`}
+                      style={{ width: `${budgetProgressPercent}%` }}
+                    />
+                  </div>
+                </div>
+
+                {/* Single Purchase Cap */}
+                <div className="bg-[#101417] border border-[#252C30] p-4 rounded-lg space-y-2">
+                  <div className="text-xs text-[#7D878D] font-medium">Single Purchase Cap</div>
+                  <div className="text-xl font-bold font-mono text-white">
+                    {formatRupees(policy.per_transaction_limit)}
+                  </div>
+                  <div className="text-[11px] text-[#7D878D]">Max limit per single transaction</div>
+                </div>
+
+                {/* Active Window */}
+                <div className="bg-[#101417] border border-[#252C30] p-4 rounded-lg space-y-2">
+                  <div className="flex items-center justify-between text-xs text-[#7D878D]">
+                    <span className="font-medium">Active Time Window</span>
+                    <span className="font-mono text-[10px] text-[#4FA3D1]">24H WINDOW</span>
+                  </div>
+                  <div className="text-xl font-bold font-mono text-[#55C96B]">
+                    {policy.active_window_start || "00:00"} – {policy.active_window_end || "23:59"}
+                  </div>
+                  <div className="text-[11px] text-[#7D878D]">Real-time payment hours allowed</div>
+                </div>
+
+                {/* Total Evaluations */}
+                <div className="bg-[#101417] border border-[#252C30] p-4 rounded-lg space-y-2">
+                  <div className="text-xs text-[#7D878D] font-medium">Processed Evaluations</div>
+                  <div className="text-xl font-bold font-mono text-white">
+                    {transactions.length} <span className="text-xs text-[#7D878D] font-normal">Requests</span>
+                  </div>
+                  <div className="text-[11px] text-[#7D878D]">Total evaluated policy checks</div>
+                </div>
+
+              </div>
+
+              {/* MAIN SPLIT WORKSPACE: LIVE FEED vs RIGHT CONTROLS */}
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                
+                {/* LEFT: LIVE AUTHORIZATION EVENT STREAM (7 COLS) */}
+                <div className="lg:col-span-7 bg-[#101417] border border-[#252C30] rounded-lg p-5 space-y-4">
+                  <div className="flex items-center justify-between border-b border-[#252C30] pb-3">
+                    <div className="flex items-center gap-2">
+                      <h3 className="font-semibold text-sm text-white font-sans">Live Authorization Feed</h3>
+                      <span className="w-2 h-2 rounded-full bg-[#55C96B] animate-pulse" />
+                    </div>
+                    <span className="font-mono text-xs text-[#7D878D]">{transactions.length} Events</span>
+                  </div>
+
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left font-mono text-xs">
+                      <thead>
+                        <tr className="border-b border-[#252C30] text-[#7D878D] text-[11px]">
+                          <th className="py-2.5 pr-3 font-medium">TIME</th>
+                          <th className="py-2.5 pr-3 font-medium">TX ID</th>
+                          <th className="py-2.5 pr-3 font-medium">CATEGORY</th>
+                          <th className="py-2.5 pr-3 font-medium text-right">AMOUNT</th>
+                          <th className="py-2.5 pl-3 font-medium text-center">DECISION</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-[#252C30]">
+                        {transactions.length === 0 ? (
+                          <tr>
+                            <td colSpan={5} className="py-10 text-center text-[#7D878D] font-sans">
+                              No evaluated payment requests yet.
+                            </td>
+                          </tr>
+                        ) : (
+                          transactions.slice(0, 15).map((tx, idx) => {
+                            const isAllowed = tx.decision === "ALLOWED";
+                            const txId = tx.id ? `TX-${String(tx.id).padStart(4, '0')}` : `TX-${String(transactions.length - idx).padStart(4, '0')}`;
+                            const timeStr = formatTimeString(tx.timestamp);
+
+                            return (
+                              <tr key={tx.id || `${tx.timestamp}-${idx}`} className="hover:bg-[#14191C]/60 transition-colors">
+                                <td className="py-3 pr-3 text-[#7D878D] whitespace-nowrap">{timeStr}</td>
+                                <td className="py-3 pr-3 text-[#E5E7E8] font-semibold whitespace-nowrap">{txId}</td>
+                                <td className="py-3 pr-3 text-[#4FA3D1] whitespace-nowrap">{tx.category}</td>
+                                <td className="py-3 pr-3 text-[#E5E7E8] text-right font-bold whitespace-nowrap">{formatRupees(tx.amount)}</td>
+                                <td className="py-3 pl-3 text-center whitespace-nowrap">
+                                  {isAllowed ? (
+                                    <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-[#142E1B] text-[#4ADE80] border border-[#22C55E]/30">
+                                      ALLOW
+                                    </span>
+                                  ) : (
+                                    <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-[#38181A] text-[#F87171] border border-[#EF4444]/30">
+                                      BLOCK
+                                    </span>
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          })
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                {/* RIGHT: CONTROLS & AI INTENT (5 COLS) */}
+                <div className="lg:col-span-5 space-y-6">
+                  
+                  {/* SIGNATURE AUTHORITY CONTROL MODULE */}
+                  <div className={`border rounded-lg p-5 space-y-4 transition-colors ${
+                    isKilled ? "bg-[#14191C] border-[#E24B4B]" : "bg-[#101417] border-[#252C30]"
+                  }`}>
+                    <div className="flex items-center justify-between border-b border-[#252C30] pb-3">
+                      <span className="font-semibold text-xs text-white uppercase tracking-wider font-mono">Authority Control</span>
+                      <span className="text-xs text-[#7D878D] font-mono">SHOPPINGBOT</span>
+                    </div>
+
+                    <div className="flex items-center justify-between font-mono text-xs">
+                      <span className="text-[#7D878D]">CURRENT STATE</span>
+                      {isKilled ? (
+                        <span className="text-[#E24B4B] font-bold tracking-wider">● AUTHORITY REVOKED</span>
+                      ) : (
+                        <span className="text-[#55C96B] font-bold tracking-wider">● AUTHORITY ACTIVE</span>
+                      )}
+                    </div>
+
+                    <button
+                      onClick={handleKillToggle}
+                      className={`w-full py-3 px-4 font-mono text-xs font-bold uppercase tracking-wider rounded-md border transition-colors cursor-pointer flex items-center justify-center gap-2 ${
+                        isKilled
+                          ? "bg-[#16A34A] hover:bg-[#22C55E] text-white border-[#22C55E]"
+                          : "bg-[#DC2626] hover:bg-[#EF4444] text-white border-[#EF4444]"
                       }`}
                     >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="flex items-center gap-3">
-                          <div className={`p-2 rounded-lg ${isAllowed ? "bg-[#1b382b] text-[#3fb950]" : "bg-[#3c1e21] text-[#f85149]"}`}>
-                            {isAllowed ? <CheckCircle2 className="w-5 h-5" /> : <XCircle className="w-5 h-5" />}
-                          </div>
+                      <Power className="w-4 h-4" />
+                      <span>{isKilled ? "Restore Payment Authority" : "Revoke Payment Authority (Kill Switch)"}</span>
+                    </button>
 
-                          <div>
-                            <div className="flex items-center gap-2">
-                              <span className="font-bold text-base text-white font-mono">
-                                {formatRupees(tx.amount)}
-                              </span>
-                              <span className="px-2.5 py-0.5 rounded-md bg-[#131927] text-[#e6edf3] border border-[#232d42] font-mono text-[11px] font-semibold">
-                                {tx.category}
-                              </span>
-                              <span className="text-[#8b949e] text-xs">@ {tx.merchant}</span>
-                            </div>
-                            <p className="text-[#8b949e] mt-1 font-sans text-xs">{tx.reason}</p>
-                          </div>
-                        </div>
+                    <div className="bg-[#090B0D] border border-[#252C30] p-3 rounded-md text-xs font-mono space-y-1">
+                      <div className="text-[#D6A94A] font-semibold flex items-center gap-1.5">
+                        <AlertTriangle className="w-3.5 h-3.5" />
+                        <span>Warning</span>
+                      </div>
+                      <p className="text-[#7D878D] text-[11px] leading-relaxed">
+                        {isKilled
+                          ? "Payment authority is currently cut. Subsequent payment requests will be rejected immediately."
+                          : "Activating the kill switch immediately revokes spending authority for this agent."}
+                      </p>
+                    </div>
+                  </div>
 
-                        <div className="text-right shrink-0">
-                          <span
-                            className={`px-3 py-1 rounded-lg text-xs font-bold font-mono uppercase ${
-                              isAllowed
-                                ? "bg-[#1b382b] text-[#3fb950] border border-[#2ea043]"
-                                : "bg-[#3c1e21] text-[#f85149] border border-[#f85149]"
-                            }`}
-                          >
-                            {tx.decision}
-                          </span>
-                          <div className="text-[11px] text-[#8b949e] font-mono mt-1.5">{timeStr}</div>
-                        </div>
+                  {/* AI INTENT PARSER MODULE */}
+                  <div className="bg-[#101417] border border-[#252C30] rounded-lg p-5 space-y-4">
+                    <div className="border-b border-[#252C30] pb-3 space-y-1">
+                      <div className="flex items-center justify-between">
+                        <h3 className="font-semibold text-xs text-white uppercase tracking-wider font-mono">AI Intent Parser</h3>
+                        <span className="text-[10px] font-mono text-[#4FA3D1] bg-[#14191C] px-2 py-0.5 rounded border border-[#252C30]">Copilot</span>
+                      </div>
+                      <p className="text-[11px] text-[#7D878D] font-sans">
+                        AI interprets request intent. CircuitBreaker enforces payment rules.
+                      </p>
+                    </div>
+
+                    <form
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        handleSendIntent(intentInput);
+                      }}
+                      className="space-y-3 font-mono text-xs"
+                    >
+                      <input
+                        type="text"
+                        value={intentInput}
+                        onChange={(e) => setIntentInput(e.target.value)}
+                        placeholder="Buy groceries for ₹800"
+                        className="w-full bg-[#090B0D] border border-[#252C30] rounded-md px-3.5 py-2 text-xs text-[#E5E7E8] focus:border-[#4FA3D1] focus:outline-none"
+                        required
+                      />
+                      <button
+                        type="submit"
+                        disabled={intentLoading}
+                        className="w-full py-2.5 bg-[#14191C] hover:bg-[#252C30] border border-[#252C30] text-white font-bold text-xs uppercase tracking-wider rounded-md transition-colors cursor-pointer flex items-center justify-center gap-2"
+                      >
+                        {intentLoading ? <RefreshCw className="w-4 h-4 animate-spin text-[#4FA3D1]" /> : <Send className="w-4 h-4 text-[#4FA3D1]" />}
+                        <span>Parse & Authorize</span>
+                      </button>
+                    </form>
+                  </div>
+
+                </div>
+
+              </div>
+            </div>
+          )}
+
+          {/* PAGE VIEW 2: AGENT MANAGER */}
+          {navSection === "AGENTS" && (
+            <div className="space-y-6 max-w-5xl mx-auto">
+              <div className="bg-[#101417] border border-[#252C30] rounded-lg p-6 space-y-6">
+                
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#252C30] pb-4">
+                  <div>
+                    <span className="text-xs font-mono text-[#7D878D] uppercase tracking-wider">Agent Profile & Governance</span>
+                    <h2 className="text-xl font-bold font-sans text-white mt-0.5">
+                      {agent?.name || "ShoppingBot"}
+                    </h2>
+                  </div>
+
+                  <div>
+                    {isKilled ? (
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded text-xs font-mono font-bold bg-[#38181A] text-[#F87171] border border-[#EF4444]/40">
+                        <XCircle className="w-4 h-4" /> REVOKED
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded text-xs font-mono font-bold bg-[#142E1B] text-[#4ADE80] border border-[#22C55E]/40">
+                        <CheckCircle2 className="w-4 h-4" /> AUTHORIZED
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* API Credentials */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 font-mono text-xs">
+                  <div className="bg-[#090B0D] border border-[#252C30] p-4 rounded-md space-y-2">
+                    <div className="text-[#7D878D] text-[11px]">AGENT API KEY</div>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-white font-bold">{agent?.api_key || "sb_key_shoppingbot_123"}</span>
+                      <button
+                        onClick={() => copyToClipboard(agent?.api_key || "sb_key_shoppingbot_123", "api")}
+                        className="p-1.5 bg-[#14191C] hover:bg-[#252C30] border border-[#252C30] rounded text-[#7D878D] hover:text-white cursor-pointer"
+                        title="Copy Key"
+                      >
+                        {copiedApiKey ? <Check className="w-4 h-4 text-[#55C96B]" /> : <Copy className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="bg-[#090B0D] border border-[#252C30] p-4 rounded-md space-y-2">
+                    <div className="text-[#7D878D] text-[11px]">DATABASE AGENT ID</div>
+                    <div className="text-white font-bold">AGENT #{agent?.id || 1}</div>
+                  </div>
+                </div>
+
+                {/* Authority Switch */}
+                <div className={`border rounded-lg p-5 space-y-4 ${isKilled ? "bg-[#14191C] border-[#E24B4B]" : "bg-[#090B0D] border-[#252C30]"}`}>
+                  <div className="flex items-center justify-between font-mono text-xs border-b border-[#252C30] pb-3">
+                    <span className="font-semibold text-white uppercase">Emergency Revocation Control</span>
+                    <span className={isKilled ? "text-[#E24B4B] font-bold" : "text-[#55C96B] font-bold"}>
+                      {isKilled ? "REVOKED" : "ACTIVE"}
+                    </span>
+                  </div>
+
+                  <p className="text-xs text-[#7D878D] font-sans">
+                    {isKilled
+                      ? "Agent spending authority is currently revoked. All payment requests will be blocked."
+                      : "Agent is authorized to evaluate transactions against configured spending limits."}
+                  </p>
+
+                  <button
+                    onClick={handleKillToggle}
+                    className={`w-full py-3 px-4 font-mono text-xs font-bold uppercase tracking-wider rounded-md border transition-colors cursor-pointer flex items-center justify-center gap-2 ${
+                      isKilled
+                        ? "bg-[#16A34A] hover:bg-[#22C55E] text-white border-[#22C55E]"
+                        : "bg-[#DC2626] hover:bg-[#EF4444] text-white border-[#EF4444]"
+                    }`}
+                  >
+                    <Power className="w-4 h-4" />
+                    <span>{isKilled ? "Restore Payment Authority" : "Revoke Payment Authority (Kill Switch)"}</span>
+                  </button>
+                </div>
+
+              </div>
+            </div>
+          )}
+
+          {/* PAGE VIEW 3: LIVE TRANSACTIONS */}
+          {navSection === "TRANSACTIONS" && (
+            <div className="space-y-4">
+              <div className="bg-[#101417] border border-[#252C30] rounded-lg p-6 space-y-4">
+                
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-[#252C30] pb-4">
+                  <div>
+                    <h2 className="text-base font-semibold text-white font-sans">Live Authorization Event Stream</h2>
+                    <p className="text-xs text-[#7D878D] font-sans mt-0.5">Real-time evaluated transaction log</p>
+                  </div>
+
+                  <div className="relative w-full sm:w-64 font-mono text-xs">
+                    <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-[#7D878D]" />
+                    <input
+                      type="text"
+                      placeholder="Search transactions..."
+                      value={txSearch}
+                      onChange={(e) => setTxSearch(e.target.value)}
+                      className="w-full bg-[#090B0D] border border-[#252C30] rounded-md pl-9 pr-3 py-1.5 text-xs text-[#E5E7E8] focus:border-[#4FA3D1] focus:outline-none"
+                    />
+                  </div>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left font-mono text-xs">
+                    <thead>
+                      <tr className="border-b border-[#252C30] text-[#7D878D] text-[11px]">
+                        <th className="py-2.5 pr-4 font-medium">TIME</th>
+                        <th className="py-2.5 pr-4 font-medium">TX ID</th>
+                        <th className="py-2.5 pr-4 font-medium">AGENT</th>
+                        <th className="py-2.5 pr-4 font-medium">CATEGORY</th>
+                        <th className="py-2.5 pr-4 font-medium">MERCHANT</th>
+                        <th className="py-2.5 pr-4 font-medium text-right">AMOUNT</th>
+                        <th className="py-2.5 pr-4 font-medium text-center">DECISION</th>
+                        <th className="py-2.5 pl-4 font-medium text-right">RAZORPAY ORDER</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[#252C30]">
+                      {filteredTransactions.length === 0 ? (
+                        <tr>
+                          <td colSpan={8} className="py-12 text-center text-[#7D878D] font-sans">
+                            No matching transactions found.
+                          </td>
+                        </tr>
+                      ) : (
+                        filteredTransactions.map((tx, idx) => {
+                          const isAllowed = tx.decision === "ALLOWED";
+                          const txId = tx.id ? `TX-${String(tx.id).padStart(4, '0')}` : `TX-${String(transactions.length - idx).padStart(4, '0')}`;
+                          const timeStr = formatTimeString(tx.timestamp);
+
+                          return (
+                            <tr key={tx.id || `${tx.timestamp}-${idx}`} className="hover:bg-[#14191C]/60 transition-colors">
+                              <td className="py-3 pr-4 text-[#7D878D] whitespace-nowrap">{timeStr}</td>
+                              <td className="py-3 pr-4 text-[#E5E7E8] font-bold whitespace-nowrap">{txId}</td>
+                              <td className="py-3 pr-4 text-[#7D878D] whitespace-nowrap">SHOPPINGBOT</td>
+                              <td className="py-3 pr-4 text-[#4FA3D1] whitespace-nowrap">{tx.category}</td>
+                              <td className="py-3 pr-4 text-[#E5E7E8] whitespace-nowrap">{tx.merchant}</td>
+                              <td className="py-3 pr-4 text-[#E5E7E8] text-right font-bold whitespace-nowrap">{formatRupees(tx.amount)}</td>
+                              <td className="py-3 pr-4 text-center whitespace-nowrap">
+                                {isAllowed ? (
+                                  <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-[#142E1B] text-[#4ADE80] border border-[#22C55E]/30">
+                                    ALLOW
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-[#38181A] text-[#F87171] border border-[#EF4444]/30">
+                                    BLOCK
+                                  </span>
+                                )}
+                              </td>
+                              <td className="py-3 pl-4 text-right whitespace-nowrap">
+                                {isAllowed && tx.razorpay_order_id ? (
+                                  <button
+                                    onClick={() => copyToClipboard(tx.razorpay_order_id)}
+                                    className="text-[#4FA3D1] font-bold hover:underline cursor-pointer"
+                                    title="Click to copy Razorpay Order ID"
+                                  >
+                                    {tx.razorpay_order_id}
+                                  </button>
+                                ) : (
+                                  <span className="text-[#7D878D]">-</span>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
+              </div>
+            </div>
+          )}
+
+          {/* PAGE VIEW 4: AI INTENT COPILOT */}
+          {navSection === "AI INTENT" && (
+            <div className="space-y-6 max-w-5xl mx-auto">
+              <div className="bg-[#101417] border border-[#252C30] rounded-lg p-6 space-y-6">
+                
+                <div className="border-b border-[#252C30] pb-4 space-y-1">
+                  <h2 className="text-base font-semibold text-white font-sans">AI Intent Copilot & Policy Gate</h2>
+                  <p className="text-xs text-[#7D878D] font-sans">
+                    AI interprets request intent. CircuitBreaker authorizes payment execution.
+                  </p>
+                </div>
+
+                {/* Form Input */}
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    handleSendIntent(intentInput);
+                  }}
+                  className="space-y-3 font-mono text-xs"
+                >
+                  <label className="block text-[#7D878D] font-medium font-sans">Enter Plain Language Payment Request</label>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={intentInput}
+                      onChange={(e) => setIntentInput(e.target.value)}
+                      placeholder="e.g. Buy groceries for around ₹1,500"
+                      className="flex-1 bg-[#090B0D] border border-[#252C30] rounded-md px-3.5 py-2.5 text-xs text-[#E5E7E8] focus:border-[#4FA3D1] focus:outline-none"
+                      required
+                    />
+                    <button
+                      type="submit"
+                      disabled={intentLoading}
+                      className="px-5 py-2.5 bg-[#14191C] hover:bg-[#252C30] border border-[#252C30] text-white font-bold text-xs uppercase tracking-wider rounded-md cursor-pointer flex items-center gap-2 shrink-0"
+                    >
+                      {intentLoading ? <RefreshCw className="w-4 h-4 animate-spin text-[#4FA3D1]" /> : <Send className="w-4 h-4 text-[#4FA3D1]" />}
+                      <span>Parse & Authorize</span>
+                    </button>
+                  </div>
+
+                  {/* Scenario Chips */}
+                  <div className="space-y-1.5 pt-2">
+                    <span className="text-[#7D878D] text-[11px] font-sans">Demo Scenario Presets:</span>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handlePresetIntent("Buy groceries for ₹800")}
+                        className="px-3 py-1.5 bg-[#090B0D] hover:bg-[#14191C] border border-[#252C30] text-[#55C96B] rounded-md cursor-pointer"
+                      >
+                        ₹800 Groceries (Allowed)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handlePresetIntent("Buy groceries for ₹5000")}
+                        className="px-3 py-1.5 bg-[#090B0D] hover:bg-[#14191C] border border-[#252C30] text-[#E24B4B] rounded-md cursor-pointer"
+                      >
+                        ₹5,000 Over-Limit (Blocked)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handlePresetIntent("Buy something from a gambling website for ₹500")}
+                        className="px-3 py-1.5 bg-[#090B0D] hover:bg-[#14191C] border border-[#252C30] text-[#D6A94A] rounded-md cursor-pointer"
+                      >
+                        ₹500 Gambling (Blocked Category)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handlePresetIntent("Buy headphones for ₹1200")}
+                        className="px-3 py-1.5 bg-[#090B0D] hover:bg-[#14191C] border border-[#252C30] text-[#4FA3D1] rounded-md cursor-pointer"
+                      >
+                        ₹1,200 Headphones (Kill Switch Test)
+                      </button>
+                    </div>
+                  </div>
+                </form>
+
+                {/* Output Split View */}
+                {intentResult && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4 border-t border-[#252C30] font-mono text-xs">
+                    
+                    {/* Left: AI Intent */}
+                    <div className="bg-[#090B0D] border border-[#252C30] p-4 rounded-md space-y-3">
+                      <div className="flex items-center justify-between border-b border-[#252C30] pb-2">
+                        <span className="font-semibold text-[#4FA3D1]">1. AI INTERPRETED INTENT</span>
+                        <span className="text-[10px] text-[#7D878D]">EXTRACTED</span>
                       </div>
 
-                      {/* Razorpay Order ID */}
-                      {isAllowed && tx.razorpay_order_id && (
-                        <div className="mt-3 pt-2.5 border-t border-[#232d42] flex items-center justify-between text-xs font-mono">
-                          <span className="flex items-center gap-1.5 text-[#8b949e]">
-                            <Lock className="w-3.5 h-3.5 text-[#2f81f7]" /> Razorpay Order Created:
-                          </span>
-                          <button
-                            onClick={() => copyToClipboard(tx.razorpay_order_id)}
-                            className="bg-[#131927] hover:bg-[#202c48] px-3 py-1 rounded-lg border border-[#232d42] font-bold text-[#38bdf8] flex items-center gap-1.5 cursor-pointer"
-                            title="Click to copy Razorpay Order ID"
-                          >
-                            <span>{tx.razorpay_order_id}</span>
-                            {copiedOrderId === tx.razorpay_order_id ? (
-                              <Check className="w-3.5 h-3.5 text-[#3fb950]" />
-                            ) : (
-                              <Copy className="w-3.5 h-3.5 text-[#8b949e]" />
-                            )}
-                          </button>
+                      {intentResult.intent ? (
+                        <div className="space-y-2 text-xs">
+                          <div className="flex justify-between border-b border-[#252C30] pb-1.5">
+                            <span className="text-[#7D878D]">CATEGORY</span>
+                            <span className="text-[#4FA3D1] font-bold">{intentResult.intent.category || "unknown"}</span>
+                          </div>
+                          <div className="flex justify-between border-b border-[#252C30] pb-1.5">
+                            <span className="text-[#7D878D]">AMOUNT</span>
+                            <span className="text-white font-bold">
+                              {intentResult.intent.amount ? formatRupees(intentResult.intent.amount * 100) : "-"}
+                            </span>
+                          </div>
+                          <div className="flex justify-between border-b border-[#252C30] pb-1.5">
+                            <span className="text-[#7D878D]">MERCHANT</span>
+                            <span className="text-white">{intentResult.intent.merchant || "Standard Vendor"}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-[#7D878D]">REASON</span>
+                            <span className="text-white truncate max-w-[180px]">{intentResult.intent.reason || "Grocery purchase"}</span>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="text-[#E24B4B] py-3 text-center">
+                          {intentResult.error || "Unable to extract intent"}
                         </div>
                       )}
                     </div>
-                  );
-                })
-              )}
-            </div>
-          </div>
-        )}
 
-        {/* TAB 4: COMPLIANCE AUDIT LOG */}
-        {activeTab === "audit" && (
-          <div className="bg-[#131927] border border-[#1f2638] rounded-2xl p-6 space-y-4 font-mono text-xs shadow-xl">
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-[#232d42] pb-4">
-              <div className="space-y-1">
-                <h2 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
-                  <FileText className="w-4 h-4 text-[#2f81f7]" /> Compliance Audit Trail & Event Logs
-                </h2>
-                <p className="text-xs text-[#8b949e] font-sans">
-                  Immutable audit trail recording all policy updates, kill switch activations, and payment evaluations.
-                </p>
-              </div>
-
-              {/* Audit Search & Filter Tabs */}
-              <div className="flex flex-wrap items-center gap-2">
-                <div className="relative">
-                  <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-[#8b949e]" />
-                  <input
-                    type="text"
-                    placeholder="Search logs..."
-                    value={auditSearch}
-                    onChange={(e) => setAuditSearch(e.target.value)}
-                    className="bg-[#090d16] border border-[#232d42] rounded-xl pl-9 pr-3 py-1.5 text-xs text-white focus:border-[#2f81f7] focus:outline-none w-40 sm:w-52"
-                  />
-                </div>
-
-                <div className="flex items-center gap-1 bg-[#090d16] p-1 rounded-xl border border-[#232d42] text-[11px]">
-                  {["ALL", "KILL_SWITCH", "POLICY", "EVALUATION"].map((filterKey) => (
-                    <button
-                      key={filterKey}
-                      onClick={() => setAuditFilter(filterKey)}
-                      className={`px-3 py-1 rounded-lg transition-colors cursor-pointer ${
-                        auditFilter === filterKey
-                          ? "bg-[#202c48] text-[#38bdf8] font-bold"
-                          : "text-[#8b949e] hover:text-white"
-                      }`}
-                    >
-                      {filterKey.replace("_", " ")}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            <div className="space-y-2.5 max-h-[600px] overflow-y-auto pr-1">
-              {filteredAuditEvents.length === 0 ? (
-                <p className="text-[#8b949e] text-center py-12 font-sans">No matching audit logs found.</p>
-              ) : (
-                filteredAuditEvents.map((ev) => {
-                  const dateStr = formatDateTimeString(ev.timestamp);
-                  const isHuman = ev.actor === "human";
-
-                  return (
-                    <div
-                      key={ev.id || `${ev.timestamp}-${Math.random()}`}
-                      className="flex flex-col sm:flex-row sm:items-center justify-between p-3 rounded-xl bg-[#090d16] border border-[#232d42] text-xs gap-3 hover:border-[#2f81f7]/30 transition-colors"
-                    >
-                      <div className="flex items-center gap-3 truncate">
-                        <span
-                          className={`px-2.5 py-1 rounded-md text-[10px] font-bold shrink-0 uppercase tracking-wider ${
-                            isHuman
-                              ? "bg-[#342415] text-[#d29922] border border-[#d29922]/50"
-                              : "bg-[#1f2d3d] text-[#38bdf8] border border-[#38bdf8]/50"
-                          }`}
-                        >
-                          ACTOR: {ev.actor}
-                        </span>
-
-                        <span className="font-bold text-[#e6edf3] shrink-0">{ev.event_type}</span>
-                        <span className="text-[#8b949e] font-sans truncate">{ev.detail}</span>
+                    {/* Right: Gate Decision */}
+                    <div className="bg-[#090B0D] border border-[#252C30] p-4 rounded-md space-y-3">
+                      <div className="flex items-center justify-between border-b border-[#252C30] pb-2">
+                        <span className="font-semibold text-[#55C96B]">2. CIRCUITBREAKER DECISION</span>
+                        <span className="text-[10px] text-[#7D878D]">GATE RESULT</span>
                       </div>
 
-                      <span className="text-[#8b949e] text-[11px] shrink-0 font-mono">{dateStr}</span>
+                      {intentResult.decision ? (
+                        <div className="space-y-3 text-xs">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[#7D878D]">STATUS</span>
+                            {intentResult.decision.status === "ALLOWED" ? (
+                              <span className="text-[#55C96B] font-bold">● ALLOWED</span>
+                            ) : (
+                              <span className="text-[#E24B4B] font-bold">● BLOCKED</span>
+                            )}
+                          </div>
+
+                          <div>
+                            <span className="text-[#7D878D] block mb-1">EVALUATION REASON</span>
+                            <div className="bg-[#101417] p-2.5 border border-[#252C30] rounded text-[#E5E7E8]">
+                              {intentResult.decision.reason}
+                            </div>
+                          </div>
+
+                          {intentResult.razorpay_order_id && (
+                            <div className="pt-2 border-t border-[#252C30] flex items-center justify-between">
+                              <span className="text-[#7D878D]">RAZORPAY ORDER</span>
+                              <button
+                                type="button"
+                                onClick={() => copyToClipboard(intentResult.razorpay_order_id)}
+                                className="text-[#4FA3D1] font-bold hover:underline cursor-pointer"
+                              >
+                                {intentResult.razorpay_order_id}
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="text-[#7D878D] py-3 text-center">
+                          No decision (uncertain AI intent).
+                        </div>
+                      )}
                     </div>
-                  );
-                })
-              )}
+
+                  </div>
+                )}
+
+              </div>
             </div>
-          </div>
-        )}
+          )}
 
-      </main>
+          {/* PAGE VIEW 5: POLICY ENGINE */}
+          {navSection === "POLICIES" && (
+            <div className="space-y-6 max-w-5xl mx-auto">
+              <div className="bg-[#101417] border border-[#252C30] rounded-lg p-6 space-y-6 font-mono text-xs">
+                
+                <div className="flex items-center justify-between border-b border-[#252C30] pb-4">
+                  <div>
+                    <h2 className="text-base font-semibold text-white font-sans">Policy Engine & Spending Caps</h2>
+                    <p className="text-xs text-[#7D878D] font-sans mt-0.5">Configure live rules enforced by CircuitBreaker</p>
+                  </div>
 
-      {/* Footer */}
-      <footer className="border-t border-[#1f2638] py-4 text-center text-xs font-mono text-[#8b949e] bg-[#0d121f]">
-        CircuitBreaker — Agent Payment Authorization & Governance Engine
-      </footer>
+                  <button
+                    type="button"
+                    onClick={handleResetPolicy}
+                    className="px-3 py-1.5 bg-[#090B0D] hover:bg-[#14191C] border border-[#252C30] text-[#4FA3D1] rounded-md cursor-pointer"
+                  >
+                    Reset Defaults
+                  </button>
+                </div>
+
+                <form onSubmit={handleSavePolicy} className="space-y-6">
+                  
+                  {/* Financial Caps */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 p-4 bg-[#090B0D] border border-[#252C30] rounded-md">
+                    <div>
+                      <label className="block text-[#7D878D] font-bold mb-1">PER TRANSACTION LIMIT (₹)</label>
+                      <input
+                        type="number"
+                        min="1"
+                        value={formLimit}
+                        onChange={(e) => setFormLimit(e.target.value)}
+                        className="w-full bg-[#101417] border border-[#252C30] rounded-md px-3 py-2 text-xs text-white font-bold"
+                        required
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[#7D878D] font-bold mb-1">DAILY BUDGET (₹)</label>
+                      <input
+                        type="number"
+                        min="1"
+                        value={formBudget}
+                        onChange={(e) => setFormBudget(e.target.value)}
+                        className="w-full bg-[#101417] border border-[#252C30] rounded-md px-3 py-2 text-xs text-white font-bold"
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  {/* Category Controls */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 p-4 bg-[#090B0D] border border-[#252C30] rounded-md">
+                    <div className="space-y-2">
+                      <label className="block text-[#55C96B] font-bold">ALLOWED CATEGORIES</label>
+                      <input
+                        type="text"
+                        value={formAllowed}
+                        onChange={(e) => setFormAllowed(e.target.value)}
+                        placeholder="groceries, subscriptions"
+                        className="w-full bg-[#101417] border border-[#252C30] rounded-md px-3 py-2 text-xs text-white"
+                      />
+                      <div className="flex items-center gap-1.5 text-[11px] text-[#7D878D] pt-1">
+                        <span>Presets:</span>
+                        {["travel", "cloud", "supplies"].map((p) => (
+                          <button
+                            key={p}
+                            type="button"
+                            onClick={() => addCategoryPreset("allowed", p)}
+                            className="px-2 py-0.5 bg-[#14191C] hover:bg-[#252C30] border border-[#252C30] text-[#4FA3D1] rounded cursor-pointer"
+                          >
+                            + {p}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="block text-[#E24B4B] font-bold">BLOCKED CATEGORIES</label>
+                      <input
+                        type="text"
+                        value={formBlocked}
+                        onChange={(e) => setFormBlocked(e.target.value)}
+                        placeholder="gambling, crypto"
+                        className="w-full bg-[#101417] border border-[#252C30] rounded-md px-3 py-2 text-xs text-white"
+                      />
+                      <div className="flex items-center gap-1.5 text-[11px] text-[#7D878D] pt-1">
+                        <span>Presets:</span>
+                        {["gaming", "luxury", "tickets"].map((p) => (
+                          <button
+                            key={p}
+                            type="button"
+                            onClick={() => addCategoryPreset("blocked", p)}
+                            className="px-2 py-0.5 bg-[#14191C] hover:bg-[#252C30] border border-[#252C30] text-[#E24B4B] rounded cursor-pointer"
+                          >
+                            + {p}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Time Window */}
+                  <div className="p-4 bg-[#090B0D] border border-[#252C30] rounded-md space-y-3">
+                    <label className="block text-[#7D878D] font-bold">ACTIVE TIME WINDOW (24H FORMAT)</label>
+                    <div className="grid grid-cols-2 gap-4 max-w-xs">
+                      <div>
+                        <span className="block text-[11px] text-[#7D878D] mb-1">START</span>
+                        <input
+                          type="time"
+                          value={formStart}
+                          onChange={(e) => setFormStart(e.target.value)}
+                          className="w-full bg-[#101417] border border-[#252C30] rounded-md px-3 py-1.5 text-xs text-white"
+                        />
+                      </div>
+                      <div>
+                        <span className="block text-[11px] text-[#7D878D] mb-1">END</span>
+                        <input
+                          type="time"
+                          value={formEnd}
+                          onChange={(e) => setFormEnd(e.target.value)}
+                          className="w-full bg-[#101417] border border-[#252C30] rounded-md px-3 py-1.5 text-xs text-white"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex justify-end pt-2">
+                    <button
+                      type="submit"
+                      disabled={savingPolicy}
+                      className="px-6 py-2.5 bg-[#16A34A] hover:bg-[#22C55E] text-white font-bold text-xs uppercase tracking-wider rounded-md cursor-pointer transition-colors"
+                    >
+                      {savingPolicy ? "Saving..." : "Save & Enforce Policy"}
+                    </button>
+                  </div>
+
+                </form>
+
+              </div>
+            </div>
+          )}
+
+          {/* VIEW 6: AUDIT LOG */}
+          {navSection === "AUDIT" && (
+            <div className="space-y-4">
+              <div className="bg-[#101417] border border-[#252C30] rounded-lg p-6 space-y-4 font-mono text-xs">
+                
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-[#252C30] pb-4">
+                  <div>
+                    <h2 className="text-base font-semibold text-white font-sans">Compliance Audit Trail</h2>
+                    <p className="text-xs text-[#7D878D] font-sans mt-0.5">Immutable audit log recording policy enforcement & events</p>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2">
+                    <div className="relative">
+                      <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-[#7D878D]" />
+                      <input
+                        type="text"
+                        placeholder="Search logs..."
+                        value={auditSearch}
+                        onChange={(e) => setAuditSearch(e.target.value)}
+                        className="bg-[#090B0D] border border-[#252C30] rounded-md pl-9 pr-3 py-1.5 text-xs text-white focus:border-[#4FA3D1] focus:outline-none w-48"
+                      />
+                    </div>
+
+                    <div className="flex items-center gap-1 bg-[#090B0D] p-1 rounded-md border border-[#252C30]">
+                      {["ALL", "KILL_SWITCH", "POLICY", "EVALUATION"].map((filterKey) => (
+                        <button
+                          key={filterKey}
+                          onClick={() => setAuditFilter(filterKey)}
+                          className={`px-2.5 py-1 rounded cursor-pointer transition-colors ${
+                            auditFilter === filterKey
+                              ? "bg-[#14191C] text-[#4FA3D1] font-bold border border-[#252C30]"
+                              : "text-[#7D878D] hover:text-white"
+                          }`}
+                        >
+                          {filterKey.replace("_", " ")}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  {filteredAuditEvents.length === 0 ? (
+                    <div className="py-12 text-center text-[#7D878D] font-sans">No matching audit logs found.</div>
+                  ) : (
+                    filteredAuditEvents.map((ev, i) => {
+                      const dateStr = formatDateTimeString(ev.timestamp);
+                      return (
+                        <div
+                          key={ev.id || i}
+                          className="flex flex-col sm:flex-row sm:items-center justify-between p-3 bg-[#090B0D] border border-[#252C30] rounded-md gap-3 text-xs"
+                        >
+                          <div className="flex items-center gap-3 truncate">
+                            <span className="px-2 py-0.5 bg-[#14191C] border border-[#252C30] text-[#7D878D] text-[10px] font-bold">
+                              {ev.actor.toUpperCase()}
+                            </span>
+                            <span className="font-semibold text-white">{ev.event_type}</span>
+                            <span className="text-[#7D878D] truncate">{ev.detail}</span>
+                          </div>
+
+                          <span className="text-[#7D878D] text-[11px] shrink-0 font-mono">{dateStr}</span>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+
+              </div>
+            </div>
+          )}
+
+        </main>
+      </div>
+
     </div>
   );
 }
