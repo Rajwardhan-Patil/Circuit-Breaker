@@ -245,4 +245,4 @@ What CircuitBreaker would need beyond this prototype:
 
 ## 18. License
 
-MIT
+Apache License 2.0
